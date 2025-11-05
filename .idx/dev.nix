@@ -5,6 +5,7 @@
     pkgs.jdk21_headless
     pkgs.gradle
     pkgs.android-tools
+    pkgs.yarn
     pkgs.watchman
     pkgs.curl # Add curl for health checking Metro
   ];
@@ -13,12 +14,14 @@
       "msjsdiag.vscode-react-native"
       "dbaeumer.vscode-eslint"
       "esbenp.prettier-vscode"
+      "fwcd.kotlin"
+      "ms-vscode.js-debug"
     ];
     workspace = {
       onCreate = {
         install = ''
                     # Install dependencies
-                    npm install --prefer-offline --no-audit --no-progress
+                    yarn install
 
                     # Create local Android SDK directory in home folder
                     mkdir -p $HOME/.android-sdk-local
@@ -56,24 +59,13 @@
             "-c"
             ''
               # Set the correct emulator to use
-              export ANDROID_SERIAL=emulator-5554
+             export ANDROID_SERIAL=emulator-5554
 
               # Start watchman
               watchman watch $PWD
 
               # Set the correct Metro port environment variable
               export RCT_METRO_PORT=$PORT
-
-              npm start &
-              METRO_PID=$!
-
-              # Wait for Metro to be available
-              until curl -s http://localhost:$PORT/status > /dev/null; do
-                sleep 1
-              done
-
-              #npm run android
-              wait $METRO_PID
             ''
           ];
           manager = "web";
