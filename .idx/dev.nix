@@ -72,7 +72,7 @@
                 sleep 1
               done
 
-              npm run android
+              #npm run android
               wait $METRO_PID
             ''
           ];
