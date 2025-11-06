@@ -2,6 +2,7 @@ package com.youtubedownloader.extractors
 import com.youtubedownloader.models.YouTubeClient
 import com.youtubedownloader.models.YouTubeLocale
 import com.youtubedownloader.models.Context
+import com.youtubedownloader.models.response.PlayerResponse
 import com.youtubedownloader.models.body.PlayerBody
 import java.util.Locale
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -18,6 +19,7 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.util.encodeBase64
 import java.security.MessageDigest
+import kotlinx.serialization.json.JsonPrimitive
 
 object InnerTube {
 
@@ -81,31 +83,46 @@ object InnerTube {
         cookie: String?,
         forceVisitorData: String?,
         signatureTimestamp: Int?,
-    ) = httpClient.post("player") {
-        ytClient(client, cookie)
-        setBody(
-            PlayerBody(
-                context = client.toContext(locale,  forceVisitorData ?: visitorData, null).let {
-                    if (client.isEmbedded) {
-                        it.copy(
-                            thirdParty = Context.ThirdParty(
-                                embedUrl = "https://www.youtube.com/watch?v=${videoId}"
+    ): Result<PlayerResponse> = runCatching {
+        httpClient.post("player") {
+            ytClient(client, cookie)
+            setBody(
+                PlayerBody(
+                    context = client.toContext(locale, forceVisitorData ?: visitorData, null).let {
+                        if (client.isEmbedded) {
+                            it.copy(
+                                thirdParty = Context.ThirdParty(
+                                    embedUrl = "https://www.youtube.com/watch?v=$videoId"
+                                )
                             )
+                        } else it
+                    },
+                    videoId = videoId,
+                    playlistId = playlistId,
+                    playbackContext = if (client.useSignatureTimestamp && signatureTimestamp != null) {
+                        PlayerBody.PlaybackContext(
+                            PlayerBody.PlaybackContext.ContentPlaybackContext(signatureTimestamp)
                         )
-                    } else it
-                },
-                videoId = videoId,
-                playlistId = playlistId,
-                playbackContext = if (client.useSignatureTimestamp && signatureTimestamp != null) {
-                    PlayerBody.PlaybackContext(
-                        PlayerBody.PlaybackContext.ContentPlaybackContext(
-                            signatureTimestamp
-                        )
-                    )
-                } else null,
+                    } else null,
+                )
             )
-        )
+        }
     }
+
+    suspend fun getSwJsData() = httpClient.get("https://music.youtube.com/sw.js_data")
+    private val VISITOR_DATA_REGEX = Regex("^Cg[t|s]")
+    suspend fun visitorData(): Result<String> = runCatching {
+        Json.parseToJsonElement(getSwJsData().bodyAsText().substring(5))
+            .jsonArray[0]
+            .jsonArray[2]
+            .jsonArray.first {
+                (it as? JsonPrimitive)?.contentOrNull?.let { candidate ->
+                    VISITOR_DATA_REGEX.containsMatchIn(candidate)
+                } ?: false
+            }
+            .jsonPrimitive.content
+    }
+
 
     fun parseCookieString(cookie: String): Map<String, String> =
     cookie.split("; ")
@@ -119,4 +136,5 @@ object InnerTube {
 
     fun ByteArray.toHex(): String = joinToString(separator = "") { eachByte -> "%02x".format(eachByte) }
     fun sha1(str: String): String = MessageDigest.getInstance("SHA-1").digest(str.toByteArray()).toHex()
+    
 }

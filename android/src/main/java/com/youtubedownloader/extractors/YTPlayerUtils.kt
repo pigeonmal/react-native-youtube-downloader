@@ -29,7 +29,6 @@ object YTPlayerUtils {
 
     private val STREAM_FALLBACK_CLIENTS: Array<YouTubeClient> = arrayOf(
         ANDROID_VR_1_61_48,
-     //   WEB_REMIX,
         ANDROID_CREATOR,
         IPADOS,
         ANDROID_VR_NO_AUTH,
@@ -38,45 +37,59 @@ object YTPlayerUtils {
         TVHTML5_SIMPLY_EMBEDDED_PLAYER,
         IOS,
         WEB,
-        WEB_CREATOR
+        WEB_CREATOR,
+        WEB_REMIX,
     )
 
     data class PlaybackData(
         val audioConfig: PlayerResponse.PlayerConfig.AudioConfig?,
-        val videoDetails: PlayerResponse.VideoDetails?,
-        val playbackTracking: PlayerResponse.PlaybackTracking?,
+        val videoDetails: PlayerResponse.VideoDetails,
+        val playbackTracking: PlayerResponse.PlaybackTracking,
+        val streamExpiresInSeconds: Int,
+        val audioStream: StreamFormat,
+        val videoStream: StreamFormat?,
+    )
+
+    data class StreamFormat(
         val format: PlayerResponse.StreamingData.Format,
         val streamUrl: String,
-        val streamExpiresInSeconds: Int,
     )
 
     suspend fun playerResponseForPlayback(
         videoId: String,
-        playlistId: String? = null,
+        playlistId: String?,
         audioQuality: AudioQuality,
         connectivityManager: ConnectivityManager,
+        videoQuality: VideoQuality?,
+        cookie: String?,
+        forceVisitorData: String?
     ): Result<PlaybackData> = runCatching {
+        if (InnerTube.visitorData == null) {
+            InnerTube.visitorData = InnerTube.visitorData().getOrNull()
+            Log.d(logTag, "Generated visitorData random $InnerTube.visitorData")
+        }
         Log.d(logTag, "Fetching player response for videoId: $videoId, playlistId: $playlistId")
         val signatureTimestamp = getSignatureTimestampOrNull(videoId)
         Log.d(logTag, "Signature timestamp: $signatureTimestamp")
 
-        val isLoggedIn = YouTube.cookie != null
+        val isLoggedIn = cookie != null
         Log.d(logTag, "Session authentication status: ${if (isLoggedIn) "Logged in" else "Not logged in"}")
 
+        val getAlsoVideo = videoQuality != null
         Log.d(logTag, "Attempting to get player response using MAIN_CLIENT: ${MAIN_CLIENT.clientName}")
         val mainPlayerResponse =
-            YouTube.player(videoId, playlistId, MAIN_CLIENT, signatureTimestamp).getOrThrow()
+            InnerTube.player(MAIN_CLIENT, videoId, playlistId, cookie, forceVisitorData, signatureTimestamp).getOrThrow()
         val audioConfig = mainPlayerResponse.playerConfig?.audioConfig
         val videoDetails = mainPlayerResponse.videoDetails
         val playbackTracking = mainPlayerResponse.playbackTracking
-        var format: PlayerResponse.StreamingData.Format? = null
-        var streamUrl: String? = null
+        var audioStream: StreamFormat? = null
+        var videoStream: StreamFormat? = null
         var streamExpiresInSeconds: Int? = null
         var streamPlayerResponse: PlayerResponse? = null
 
         for (clientIndex in (-1 until STREAM_FALLBACK_CLIENTS.size)) {
-            format = null
-            streamUrl = null
+            audioStream = null
+            videoStream = null
             streamExpiresInSeconds = null
 
             val client: YouTubeClient
@@ -88,47 +101,62 @@ object YTPlayerUtils {
                 client = STREAM_FALLBACK_CLIENTS[clientIndex]
                 Log.d(logTag, "Trying fallback client ${clientIndex + 1}/${STREAM_FALLBACK_CLIENTS.size}: ${client.clientName}")
 
-                if (client.loginRequired && !isLoggedIn && YouTube.cookie == null) {
+                if (client.loginRequired && !isLoggedIn) {
                     Log.d(logTag, "Skipping client ${client.clientName} - requires login but user is not logged in")
                     continue
                 }
 
                 Log.d(logTag, "Fetching player response for fallback client: ${client.clientName}")
-                streamPlayerResponse = YouTube.player(videoId, playlistId, client, signatureTimestamp).getOrNull()
+                streamPlayerResponse = InnerTube.player(client, videoId, playlistId, cookie, forceVisitorData, signatureTimestamp).getOrNull()
             }
 
             if (streamPlayerResponse?.playabilityStatus?.status == "OK") {
                 Log.d(logTag, "Player response status OK for client: ${client.clientName}")
-
-                format = findFormat(streamPlayerResponse, audioQuality, connectivityManager)
-
-                if (format == null) {
-                    Log.d(logTag, "No suitable format found for client: ${client.clientName}")
-                    continue
-                }
-
-                Log.d(logTag, "Format found: ${format.mimeType}, bitrate: ${format.bitrate}")
-
-                streamUrl = findUrlOrNull(format, videoId)
-                if (streamUrl == null) {
-                    Log.d(logTag, "Stream URL not found for format")
-                    continue
-                }
 
                 streamExpiresInSeconds = streamPlayerResponse.streamingData?.expiresInSeconds
                 if (streamExpiresInSeconds == null) {
                     Log.d(logTag, "Stream expiration time not found")
                     continue
                 }
+                val audioFormat = findAudioFormat(streamPlayerResponse, audioQuality, connectivityManager)
 
-                Log.d(logTag, "Stream expires in: $streamExpiresInSeconds seconds")
+                if (audioFormat == null) {
+                    Log.d(logTag, "No suitable audio format found for client: ${client.clientName}")
+                    continue
+                }
+
+                Log.d(logTag, "Audio format found: ${audioFormat.mimeType}, bitrate: ${audioFormat.bitrate}")
+
+                val audioStreamUrl = findUrlOrNull(audioFormat, videoId)
+                if (audioStreamUrl == null) {
+                    Log.d(logTag, "Audio stream URL not found for format")
+                    continue
+                }
+
+                audioStream = StreamFormat(audioFormat, audioStreamUrl)
+
+                if (getAlsoVideo) {
+                    val videoFormat = findVideoFormat(streamPlayerResponse, videoQuality, connectivityManager)
+                     if (videoFormat == null) {
+                        Log.d(logTag, "No suitable video format found for client: ${client.clientName}")
+                        continue
+                    }
+                    Log.d(logTag, "Video format found: ${videoFormat.mimeType}, bitrate: ${videoFormat.bitrate}")
+                    val videoStreamUrl = findUrlOrNull(videoFormat, videoId)
+                    if (videoStreamUrl == null) {
+                        Log.d(logTag, "Video stream URL not found for format")
+                        continue
+                    }
+                    videoStream = StreamFormat(videoFormat, videoStreamUrl)
+                }
+
 
                 if (clientIndex == STREAM_FALLBACK_CLIENTS.size - 1) {
                     Log.d(logTag, "Using last fallback client without validation: ${STREAM_FALLBACK_CLIENTS[clientIndex].clientName}")
                     break
                 }
 
-                if (validateStatus(streamUrl)) {
+                if (validateStatus(audioStreamUrl)) {
                     Log.d(logTag, "Stream validated successfully with client: ${client.clientName}")
                     break
                 } else {
@@ -155,28 +183,21 @@ object YTPlayerUtils {
             throw Exception("Missing stream expire time")
         }
 
-        if (format == null) {
-            Log.e(logTag, "Could not find format")
-            throw Exception("Could not find format")
+        if (audioStream == null) {
+            Log.e(logTag, "Could not find audio stream")
+            throw Exception("Could not find audio stream")
         }
 
-        if (streamUrl == null) {
-            Log.e(logTag, "Could not find stream url")
-            throw Exception("Could not find stream url")
+         if (getAlsoVideo && videoStream == null) {
+            Log.e(logTag, "Could not find video stream")
+            throw Exception("Could not find video stream")
         }
 
-        Log.d(logTag, "Successfully obtained playback data with format: ${format.mimeType}, bitrate: ${format.bitrate}")
-        PlaybackData(audioConfig, videoDetails, playbackTracking, format, streamUrl, streamExpiresInSeconds)
+        Log.d(logTag, "Successfully obtained playback data.")
+        PlaybackData(audioConfig, videoDetails, playbackTracking, streamExpiresInSeconds, audioStream, videoStream)
     }
 
-    suspend fun playerResponseForMetadata(videoId: String, playlistId: String? = null): Result<PlayerResponse> {
-        Log.d(logTag, "Fetching metadata-only player response for videoId: $videoId using MAIN_CLIENT: ${MAIN_CLIENT.clientName}")
-        return YouTube.player(videoId, playlistId, client = WEB_REMIX)
-            .onSuccess { Log.d(logTag, "Successfully fetched metadata") }
-            .onFailure { Log.e(logTag, "Failed to fetch metadata", it) }
-    }
-
-    private fun findFormat(playerResponse: PlayerResponse, audioQuality: AudioQuality, connectivityManager: ConnectivityManager): PlayerResponse.StreamingData.Format? {
+    private fun findAudioFormat(playerResponse: PlayerResponse, audioQuality: AudioQuality, connectivityManager: ConnectivityManager): PlayerResponse.StreamingData.Format? {
         Log.d(logTag, "Finding format with audioQuality: $audioQuality, network metered: ${connectivityManager.isActiveNetworkMetered}")
         val format = playerResponse.streamingData?.adaptiveFormats
             ?.filter { it.isAudio && it.isOriginal }
@@ -190,6 +211,30 @@ object YTPlayerUtils {
 
         if (format != null) Log.d(logTag, "Selected format: ${format.mimeType}, bitrate: ${format.bitrate}")
         else Log.d(logTag, "No suitable audio format found")
+
+        return format
+    }
+
+     private fun findVideoFormat(playerResponse: PlayerResponse, videoQuality: VideoQuality, connectivityManager: ConnectivityManager): PlayerResponse.StreamingData.Format? {
+        Log.d(logTag, "Finding format with videoQuality: $videoQuality, network metered: ${connectivityManager.isActiveNetworkMetered}")
+        val targetVideoQuality: VideoQuality =
+            if (videoQuality == VideoQuality.AUTO)
+                if (connectivityManager.isActiveNetworkMetered)
+                    VideoQuality.QUALITY_720P
+                else
+                    VideoQuality.QUALITY_1080P
+            else
+                videoQuality
+
+
+        val format = playerResponse.streamingData?.adaptiveFormats
+            ?.filter { it.isVideo && it.height <= targetVideoQuality }
+            ?.maxByOrNull {
+               it.height
+            }
+
+        if (format != null) Log.d(logTag, "Selected format: ${format.mimeType}, bitrate: ${format.bitrate}")
+        else Log.d(logTag, "No suitable video format found")
 
         return format
     }
