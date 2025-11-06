@@ -5,8 +5,6 @@ import com.youtubedownloader.models.Context
 import com.youtubedownloader.models.response.PlayerResponse
 import com.youtubedownloader.models.body.PlayerBody
 import java.util.Locale
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.json.Json
 import io.ktor.client.*
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.*
@@ -20,6 +18,11 @@ import io.ktor.serialization.kotlinx.json.*
 import io.ktor.util.encodeBase64
 import java.security.MessageDigest
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.contentOrNull
 
 object InnerTube {
 
@@ -106,21 +109,14 @@ object InnerTube {
                     } else null,
                 )
             )
-        }
+        }.body<PlayerResponse>()
     }
 
     suspend fun getSwJsData() = httpClient.get("https://music.youtube.com/sw.js_data")
     private val VISITOR_DATA_REGEX = Regex("^Cg[t|s]")
-    suspend fun visitorData(): Result<String> = runCatching {
-        Json.parseToJsonElement(getSwJsData().bodyAsText().substring(5))
-            .jsonArray[0]
-            .jsonArray[2]
-            .jsonArray.first {
-                (it as? JsonPrimitive)?.contentOrNull?.let { candidate ->
-                    VISITOR_DATA_REGEX.containsMatchIn(candidate)
-                } ?: false
-            }
-            .jsonPrimitive.content
+      suspend fun visitorData(): Result<String> = runCatching {
+       (Json.parseToJsonElement(getSwJsData().bodyAsText().substring(5))
+        .jsonArray[0].jsonArray[2].jsonArray.first { (it as? JsonPrimitive)?.contentOrNull?.matches(VISITOR_DATA_REGEX) == true } as JsonPrimitive).content
     }
 
 

@@ -3,6 +3,7 @@ package com.youtubedownloader.extractors
 import android.net.ConnectivityManager
 import okhttp3.OkHttpClient
 import com.youtubedownloader.models.AudioQuality
+import com.youtubedownloader.models.VideoQuality
 import com.youtubedownloader.models.YouTubeClient
 import com.youtubedownloader.models.response.PlayerResponse
 import com.youtubedownloader.models.YouTubeClient.Companion.ANDROID_CREATOR
@@ -43,8 +44,8 @@ object YTPlayerUtils {
 
     data class PlaybackData(
         val audioConfig: PlayerResponse.PlayerConfig.AudioConfig?,
-        val videoDetails: PlayerResponse.VideoDetails,
-        val playbackTracking: PlayerResponse.PlaybackTracking,
+        val videoDetails: PlayerResponse.VideoDetails?,
+        val playbackTracking: PlayerResponse.PlaybackTracking?,
         val streamExpiresInSeconds: Int,
         val audioStream: StreamFormat,
         val videoStream: StreamFormat?,
@@ -175,7 +176,7 @@ object YTPlayerUtils {
         if (streamPlayerResponse.playabilityStatus.status != "OK") {
             val errorReason = streamPlayerResponse.playabilityStatus.reason
             Log.e(logTag, "Playability status not OK: $errorReason")
-            throw PlaybackException(errorReason, null, PlaybackException.ERROR_CODE_REMOTE_ERROR)
+            throw Exception("Playability status not OK: $errorReason")
         }
 
         if (streamExpiresInSeconds == null) {
@@ -228,9 +229,9 @@ object YTPlayerUtils {
 
 
         val format = playerResponse.streamingData?.adaptiveFormats
-            ?.filter { it.isVideo && it.height <= targetVideoQuality }
+            ?.filter { it.isVideo && it.height!! <= targetVideoQuality.heightPixels }
             ?.maxByOrNull {
-               it.height
+               it.height!!
             }
 
         if (format != null) Log.d(logTag, "Selected format: ${format.mimeType}, bitrate: ${format.bitrate}")
@@ -249,7 +250,6 @@ object YTPlayerUtils {
             return isSuccessful
         } catch (e: Exception) {
             Log.e(logTag, "Stream URL validation failed with exception", e)
-            reportException(e)
         }
         return false
     }
@@ -260,7 +260,6 @@ object YTPlayerUtils {
             .onSuccess { Log.d(logTag, "Signature timestamp obtained: $it") }
             .onFailure {
                 Log.e(logTag, "Failed to get signature timestamp", it)
-                reportException(it)
             }
             .getOrNull()
     }
@@ -271,7 +270,6 @@ object YTPlayerUtils {
             .onSuccess { Log.d(logTag, "Stream URL obtained successfully") }
             .onFailure {
                 Log.e(logTag, "Failed to get stream URL", it)
-                reportException(it)
             }
             .getOrNull()
     }
