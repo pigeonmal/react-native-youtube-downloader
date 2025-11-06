@@ -2,20 +2,16 @@
   channel = "stable-25.05";
   packages = [
     pkgs.nodejs_20
-    pkgs.jdk21_headless
+    pkgs.jdk17
     pkgs.gradle
     pkgs.android-tools
     pkgs.yarn
     pkgs.watchman
+    pkgs.kotlin
     pkgs.curl # Add curl for health checking Metro
   ];
   idx = {
-    extensions = [
-      "msjsdiag.vscode-react-native"
-      "dbaeumer.vscode-eslint"
-      "esbenp.prettier-vscode"
-      "fwcd.kotlin"
-      "ms-vscode.js-debug"
+    extensions = [      
     ];
     workspace = {
       onCreate = {
@@ -28,7 +24,6 @@
                     export ANDROID_SDK_ROOT=$HOME/.android-sdk-local
                     export ANDROID_HOME=$ANDROID_SDK_ROOT
 
-          					rm -rf ~/.gradle/caches/
 
                     # Accept Android SDK licenses
                     mkdir -p $ANDROID_SDK_ROOT/licenses
@@ -37,7 +32,7 @@
                     echo "84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
 
                     # Add more memory to the JVM
-                    sed -i 's/org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m/org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m/' "android/gradle.properties"
+                    sed -i 's/org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m/org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m/' "exemple/android/gradle.properties"
 
                      # Print success message in green
                      echo -e "\n\033[1;32m╭──────────────────────────────────────────────────────────╮\033[0m"
