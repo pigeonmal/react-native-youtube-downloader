@@ -23,7 +23,11 @@ export default function App() {
   }, []);
   return (
     <View style={styles.container}>
-      <Text>Result: {result?.videoDetails?.title}</Text>
+      {result != null ? (
+        <Text>Result: {JSON.stringify(result.playbackTracking)}</Text>
+      ) : (
+        <Text>WAIT</Text>
+      )}
     </View>
   );
 }

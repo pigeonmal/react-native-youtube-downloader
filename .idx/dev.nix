@@ -61,6 +61,8 @@
 
               # Set the correct Metro port environment variable
               export RCT_METRO_PORT=$PORT
+
+              yarn workspace react-native-youtube-downloader-example start
             ''
           ];
           manager = "web";

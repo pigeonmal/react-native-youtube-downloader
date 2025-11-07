@@ -7,6 +7,7 @@ export interface PlaybackData {
   streamExpiresInSeconds: number;
   audioStream: StreamPlayback;
   videoStream?: StreamPlayback;
+  clientName: string;
 }
 
 export interface StreamPlayback {

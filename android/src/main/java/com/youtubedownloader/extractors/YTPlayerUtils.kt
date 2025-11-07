@@ -31,12 +31,15 @@ import com.facebook.react.bridge.Arguments
         val streamExpiresInSeconds: Int,
         val audioStream: StreamPlayback,
         val videoStream: StreamPlayback?,
+        val clientName: String
     )
 
 fun PlaybackData.toWritableMap(): WritableMap {
         val map = Arguments.createMap()
         map.putInt("streamExpiresInSeconds", streamExpiresInSeconds)
         map.putMap("audioStream", audioStream.toWritableMap())
+        map.putString("clientName", clientName)
+
         videoStream?.let { map.putMap("videoStream", it.toWritableMap()) }
         audioConfig?.let { map.putMap("audioConfig", it.toWritableMap()) }
         videoDetails?.let { map.putMap("videoDetails", it.toWritableMap()) }
@@ -102,11 +105,10 @@ object YTPlayerUtils {
 
         val getAlsoVideo = videoQuality != null
         Log.d(logTag, "Attempting to get player response using MAIN_CLIENT: ${MAIN_CLIENT.clientName}")
-        val mainPlayerResponse =
-            InnerTube.player(MAIN_CLIENT, videoId, playlistId, cookie, forceVisitorData, signatureTimestamp).getOrThrow()
-        val audioConfig = mainPlayerResponse.playerConfig?.audioConfig
-        val videoDetails = mainPlayerResponse.videoDetails
-        val playbackTracking = mainPlayerResponse.playbackTracking
+      
+        var audioConfig: PlayerResponse.PlayerConfig.AudioConfig? = null
+        var videoDetails: PlayerResponse.VideoDetails? = null
+        var playbackTracking: PlayerResponse.PlaybackTracking? = null
         var audioStream: StreamPlayback? = null
         var videoStream: StreamPlayback? = null
         var streamExpiresInSeconds: Int? = null
@@ -120,7 +122,7 @@ object YTPlayerUtils {
             val client: YouTubeClient
             if (clientIndex == -1) {
                 client = MAIN_CLIENT
-                streamPlayerResponse = mainPlayerResponse
+                streamPlayerResponse = InnerTube.player(MAIN_CLIENT, videoId, playlistId, cookie, forceVisitorData, signatureTimestamp).getOrThrow()
                 Log.d(logTag, "Trying stream from MAIN_CLIENT: ${client.clientName}")
             } else {
                 client = STREAM_FALLBACK_CLIENTS[clientIndex]
@@ -133,6 +135,15 @@ object YTPlayerUtils {
 
                 Log.d(logTag, "Fetching player response for fallback client: ${client.clientName}")
                 streamPlayerResponse = InnerTube.player(client, videoId, playlistId, cookie, forceVisitorData, signatureTimestamp).getOrNull()
+            }
+            if (audioConfig == null) {
+                audioConfig = streamPlayerResponse.playerConfig?.audioConfig
+            }
+            if (videoDetails == null) {
+                videoDetails = streamPlayerResponse.videoDetails
+            }
+            if (playbackTracking == null) {
+                playbackTracking = streamPlayerResponse.playbackTracking
             }
 
             if (streamPlayerResponse?.playabilityStatus?.status == "OK") {
@@ -219,7 +230,7 @@ object YTPlayerUtils {
         }
 
         Log.d(logTag, "Successfully obtained playback data.")
-        PlaybackData(audioConfig, videoDetails, playbackTracking, streamExpiresInSeconds, audioStream, videoStream)
+        PlaybackData(audioConfig, videoDetails, playbackTracking, streamExpiresInSeconds, audioStream, videoStream, client.clientName)
     }
 
     private fun findAudioFormat(playerResponse: PlayerResponse, audioQuality: AudioQuality, connectivityManager: ConnectivityManager): PlayerResponse.StreamingData.Format? {
