@@ -3,7 +3,7 @@ import { Text, View, StyleSheet } from 'react-native';
 import YoutubeDownloader, {
   type PlaybackData,
   VideoQuality,
-} from 'react-native-youtube-downloader';
+} from '@pigeonmal/react-native-youtube-downloader';
 
 export default function App() {
   const [result, setResult] = useState<PlaybackData | null>(null);
@@ -15,10 +15,7 @@ export default function App() {
       audioQuality: 'AUTO',
       videoQuality: VideoQuality.QUALITY_1080P,
     })
-      .then((result) => {
-        console.log(result);
-        setResult(result);
-      })
+      .then(setResult)
       .catch(console.error);
   }, []);
   return (
