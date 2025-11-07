@@ -18,7 +18,44 @@ import com.youtubedownloader.models.YouTubeClient.Companion.TVHTML5_SIMPLY_EMBED
 import com.youtubedownloader.models.YouTubeClient.Companion.WEB
 import com.youtubedownloader.models.YouTubeClient.Companion.WEB_CREATOR
 import com.youtubedownloader.models.YouTubeClient.Companion.WEB_REMIX
+import com.youtubedownloader.models.response.toWritableMap
 import android.util.Log
+import com.facebook.react.bridge.WritableMap
+import com.facebook.react.bridge.Arguments
+
+
+    data class PlaybackData(
+        val audioConfig: PlayerResponse.PlayerConfig.AudioConfig?,
+        val videoDetails: PlayerResponse.VideoDetails?,
+        val playbackTracking: PlayerResponse.PlaybackTracking?,
+        val streamExpiresInSeconds: Int,
+        val audioStream: StreamPlayback,
+        val videoStream: StreamPlayback?,
+    )
+
+fun PlaybackData.toWritableMap(): WritableMap {
+        val map = Arguments.createMap()
+        map.putInt("streamExpiresInSeconds", streamExpiresInSeconds)
+        map.putMap("audioStream", audioStream.toWritableMap())
+        videoStream?.let { map.putMap("videoStream", it.toWritableMap()) }
+        audioConfig?.let { map.putMap("audioConfig", it.toWritableMap()) }
+        videoDetails?.let { map.putMap("videoDetails", it.toWritableMap()) }
+        playbackTracking?.let { map.putMap("playbackTracking", it.toWritableMap()) }
+        return map
+}
+
+
+data class StreamPlayback(
+        val format: PlayerResponse.StreamingData.Format,
+        val streamUrl: String,
+)
+
+fun StreamPlayback.toWritableMap(): WritableMap {
+        val map = Arguments.createMap()
+        map.putMap("format", format.toWritableMap())
+        map.putString("streamUrl", streamUrl)
+        return map
+}
 
 object YTPlayerUtils {
     private const val logTag = "YTPlayerUtils"
@@ -42,19 +79,6 @@ object YTPlayerUtils {
         WEB_REMIX,
     )
 
-    data class PlaybackData(
-        val audioConfig: PlayerResponse.PlayerConfig.AudioConfig?,
-        val videoDetails: PlayerResponse.VideoDetails?,
-        val playbackTracking: PlayerResponse.PlaybackTracking?,
-        val streamExpiresInSeconds: Int,
-        val audioStream: StreamFormat,
-        val videoStream: StreamFormat?,
-    )
-
-    data class StreamFormat(
-        val format: PlayerResponse.StreamingData.Format,
-        val streamUrl: String,
-    )
 
     suspend fun playerResponseForPlayback(
         videoId: String,
@@ -83,8 +107,8 @@ object YTPlayerUtils {
         val audioConfig = mainPlayerResponse.playerConfig?.audioConfig
         val videoDetails = mainPlayerResponse.videoDetails
         val playbackTracking = mainPlayerResponse.playbackTracking
-        var audioStream: StreamFormat? = null
-        var videoStream: StreamFormat? = null
+        var audioStream: StreamPlayback? = null
+        var videoStream: StreamPlayback? = null
         var streamExpiresInSeconds: Int? = null
         var streamPlayerResponse: PlayerResponse? = null
 
@@ -134,7 +158,7 @@ object YTPlayerUtils {
                     continue
                 }
 
-                audioStream = StreamFormat(audioFormat, audioStreamUrl)
+                audioStream = StreamPlayback(audioFormat, audioStreamUrl)
 
                 if (getAlsoVideo) {
                     val videoFormat = findVideoFormat(streamPlayerResponse, videoQuality, connectivityManager)
@@ -148,7 +172,7 @@ object YTPlayerUtils {
                         Log.d(logTag, "Video stream URL not found for format")
                         continue
                     }
-                    videoStream = StreamFormat(videoFormat, videoStreamUrl)
+                    videoStream = StreamPlayback(videoFormat, videoStreamUrl)
                 }
 
 

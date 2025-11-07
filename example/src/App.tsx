@@ -1,12 +1,29 @@
+import { useEffect, useState } from 'react';
 import { Text, View, StyleSheet } from 'react-native';
-import { multiply } from 'react-native-youtube-downloader';
-
-const result = multiply(3, 7);
+import YoutubeDownloader, {
+  type PlaybackData,
+  VideoQuality,
+} from 'react-native-youtube-downloader';
 
 export default function App() {
+  const [result, setResult] = useState<PlaybackData | null>(null);
+
+  useEffect(() => {
+    const videoID = 'DGMIUHewL2c';
+    YoutubeDownloader.extractYoutubeStream({
+      videoId: videoID,
+      audioQuality: 'AUTO',
+      videoQuality: VideoQuality.QUALITY_1080P,
+    })
+      .then((result) => {
+        console.log(result);
+        setResult(result);
+      })
+      .catch(console.error);
+  }, []);
   return (
     <View style={styles.container}>
-      <Text>Result: {result}</Text>
+      <Text>Result: {result?.videoDetails?.title}</Text>
     </View>
   );
 }

@@ -9,5 +9,12 @@ enum class VideoQuality(val heightPixels: Int) {
     QUALITY_360P(360),
     QUALITY_240P(240),
     QUALITY_144P(144),
-    AUTO(-1)
+    AUTO(-1);
+     companion object {
+        fun fromHeight(height: Int?): VideoQuality? {
+            return height?.let { value ->
+                values().find { it.heightPixels == value }
+            }
+        }
+    }
 }
