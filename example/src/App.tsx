@@ -24,7 +24,7 @@ export default function App() {
   return (
     <View style={styles.container}>
       {result != null ? (
-        <Text>Result: {JSON.stringify(result.playbackTracking)}</Text>
+        <Text>Result: {JSON.stringify(result.videoDetails)}</Text>
       ) : (
         <Text>WAIT</Text>
       )}

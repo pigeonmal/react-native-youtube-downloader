@@ -113,6 +113,7 @@ object YTPlayerUtils {
         var videoStream: StreamPlayback? = null
         var streamExpiresInSeconds: Int? = null
         var streamPlayerResponse: PlayerResponse? = null
+        var clientName: String = ""
 
         for (clientIndex in (-1 until STREAM_FALLBACK_CLIENTS.size)) {
             audioStream = null
@@ -122,10 +123,12 @@ object YTPlayerUtils {
             val client: YouTubeClient
             if (clientIndex == -1) {
                 client = MAIN_CLIENT
+                clientName = MAIN_CLIENT.clientName
                 streamPlayerResponse = InnerTube.player(MAIN_CLIENT, videoId, playlistId, cookie, forceVisitorData, signatureTimestamp).getOrThrow()
                 Log.d(logTag, "Trying stream from MAIN_CLIENT: ${client.clientName}")
             } else {
                 client = STREAM_FALLBACK_CLIENTS[clientIndex]
+                clientName = client.clientName
                 Log.d(logTag, "Trying fallback client ${clientIndex + 1}/${STREAM_FALLBACK_CLIENTS.size}: ${client.clientName}")
 
                 if (client.loginRequired && !isLoggedIn) {
@@ -136,15 +139,18 @@ object YTPlayerUtils {
                 Log.d(logTag, "Fetching player response for fallback client: ${client.clientName}")
                 streamPlayerResponse = InnerTube.player(client, videoId, playlistId, cookie, forceVisitorData, signatureTimestamp).getOrNull()
             }
-            if (audioConfig == null) {
-                audioConfig = streamPlayerResponse.playerConfig?.audioConfig
+            if (streamPlayerResponse != null) {
+                if (audioConfig == null) {
+                    audioConfig = streamPlayerResponse.playerConfig?.audioConfig
+                }
+                if (videoDetails == null) {
+                    videoDetails = streamPlayerResponse.videoDetails
+                }
+                if (playbackTracking == null) {
+                    playbackTracking = streamPlayerResponse.playbackTracking
+                }
             }
-            if (videoDetails == null) {
-                videoDetails = streamPlayerResponse.videoDetails
-            }
-            if (playbackTracking == null) {
-                playbackTracking = streamPlayerResponse.playbackTracking
-            }
+          
 
             if (streamPlayerResponse?.playabilityStatus?.status == "OK") {
                 Log.d(logTag, "Player response status OK for client: ${client.clientName}")
@@ -230,7 +236,7 @@ object YTPlayerUtils {
         }
 
         Log.d(logTag, "Successfully obtained playback data.")
-        PlaybackData(audioConfig, videoDetails, playbackTracking, streamExpiresInSeconds, audioStream, videoStream, client.clientName)
+        PlaybackData(audioConfig, videoDetails, playbackTracking, streamExpiresInSeconds, audioStream, videoStream, clientName)
     }
 
     private fun findAudioFormat(playerResponse: PlayerResponse, audioQuality: AudioQuality, connectivityManager: ConnectivityManager): PlayerResponse.StreamingData.Format? {
