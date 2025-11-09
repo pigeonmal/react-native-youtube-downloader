@@ -16,7 +16,7 @@ import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
 import org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager
 import java.io.IOException
 
-private class NewPipeDownloaderImpl() : Downloader() {
+private class NewPipeDownloaderImpl : Downloader() {
 
     private val client = OkHttpClient.Builder()
         .build()
@@ -48,20 +48,24 @@ private class NewPipeDownloaderImpl() : Downloader() {
 
         if (response.code == 429) {
             response.close()
-
             throw ReCaptchaException("reCaptcha Challenge requested", url)
         }
 
         val responseBodyToReturn = response.body?.string()
-
         val latestUrl = response.request.url.toString()
-        return Response(response.code, response.message, response.headers.toMultimap(), responseBodyToReturn, responseBodyToReturn?.toByteArray(), latestUrl)
+        return Response(
+            response.code,
+            response.message,
+            response.headers.toMultimap(),
+            responseBodyToReturn,
+            responseBodyToReturn?.toByteArray(),
+            latestUrl
+        )
     }
 
     override fun executeAsync(request: Request, callback: AsyncCallback?): CancellableCall {
         TODO("Placeholder")
     }
-
 }
 
 object NewPipeUtils {
@@ -97,5 +101,4 @@ object NewPipeUtils {
                 url
             )
         }
-
 }

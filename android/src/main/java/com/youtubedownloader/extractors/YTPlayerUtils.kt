@@ -66,20 +66,20 @@ object YTPlayerUtils {
     private val httpClient = OkHttpClient.Builder()
         .build()
 
-    private val MAIN_CLIENT: YouTubeClient = ANDROID_VR_1_43_32
+    private val MAIN_CLIENT: YouTubeClient = MOBILE
 
     private val STREAM_FALLBACK_CLIENTS: Array<YouTubeClient> = arrayOf(
         ANDROID_VR_1_61_48,
         ANDROID_CREATOR,
         IPADOS,
         ANDROID_VR_NO_AUTH,
-        MOBILE,
         TVHTML5,
         TVHTML5_SIMPLY_EMBEDDED_PLAYER,
         IOS,
         WEB,
         WEB_CREATOR,
         WEB_REMIX,
+        ANDROID_VR_1_43_32
     )
 
 

@@ -11,9 +11,9 @@
     pkgs.curl # Add curl for health checking Metro
   ];
   idx = {
-    extensions = [      
-    
- "esbenp.prettier-vscode"];
+    extensions = [
+    "esbenp.prettier-vscode"
+  ];
     workspace = {
       onCreate = {
         install = ''

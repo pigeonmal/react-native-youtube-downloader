@@ -1,28 +1,37 @@
 package com.youtubedownloader.extractors
+
 import com.youtubedownloader.models.YouTubeClient
 import com.youtubedownloader.models.YouTubeLocale
 import com.youtubedownloader.models.Context
 import com.youtubedownloader.models.response.PlayerResponse
 import com.youtubedownloader.models.body.PlayerBody
 import java.util.Locale
-import io.ktor.client.*
+
+import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.engine.okhttp.*
-import io.ktor.client.plugins.*
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.DefaultRequest
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.compression.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.request.*
+import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.get
+import io.ktor.client.request.headers
+import io.ktor.client.request.parameter
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
-import io.ktor.util.encodeBase64
-import java.security.MessageDigest
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonArray
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+
+import io.ktor.serialization.kotlinx.json.json
+
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+
+import java.security.MessageDigest
 
 object InnerTube {
 
@@ -40,11 +49,13 @@ object InnerTube {
         expectSuccess = true
 
         install(ContentNegotiation) {
-            json(Json {
-                ignoreUnknownKeys = true
-                explicitNulls = false
-                encodeDefaults = true
-            })
+            json(
+                Json {
+                    ignoreUnknownKeys = true
+                    explicitNulls = false
+                    encodeDefaults = true
+                }
+            )
         }
 
         install(ContentEncoding) {
@@ -52,7 +63,7 @@ object InnerTube {
             deflate(0.8F)
         }
 
-        defaultRequest {
+        install(DefaultRequest) {
             url(YouTubeClient.API_URL_YOUTUBE_MUSIC)
         }
     }
@@ -61,21 +72,21 @@ object InnerTube {
         contentType(ContentType.Application.Json)
         headers {
             append("X-Goog-Api-Format-Version", "1")
-            append("X-YouTube-Client-Name", client.clientId /* Not a typo. The Client-Name header does contain the client id. */)
+            append("X-YouTube-Client-Name", client.clientId)
             append("X-YouTube-Client-Version", client.clientVersion)
             append("X-Origin", YouTubeClient.ORIGIN_YOUTUBE_MUSIC)
             append("Referer", YouTubeClient.REFERER_YOUTUBE_MUSIC)
             if (cookie != null && client.loginSupported) {
                 append("cookie", cookie)
                 val cookieMap = parseCookieString(cookie)
-                if ("SAPISID" in cookieMap){
+                if ("SAPISID" in cookieMap) {
                     val currentTime = System.currentTimeMillis() / 1000
                     val sapisidHash = sha1("$currentTime ${cookieMap["SAPISID"]} ${YouTubeClient.ORIGIN_YOUTUBE_MUSIC}")
                     append("Authorization", "SAPISIDHASH ${currentTime}_${sapisidHash}")
                 }
             }
+            append("User-Agent", client.userAgent) 
         }
-        userAgent(client.userAgent)
         parameter("prettyPrint", false)
     }
 
@@ -113,24 +124,28 @@ object InnerTube {
     }
 
     suspend fun getSwJsData() = httpClient.get("https://music.youtube.com/sw.js_data")
+
     private val VISITOR_DATA_REGEX = Regex("^Cg[t|s]")
-      suspend fun visitorData(): Result<String> = runCatching {
-       (Json.parseToJsonElement(getSwJsData().bodyAsText().substring(5))
-        .jsonArray[0].jsonArray[2].jsonArray.first { (it as? JsonPrimitive)?.contentOrNull?.matches(VISITOR_DATA_REGEX) == true } as JsonPrimitive).content
+
+    suspend fun visitorData(): Result<String> = runCatching {
+        (Json.parseToJsonElement(getSwJsData().bodyAsText().substring(5))
+            .jsonArray[0].jsonArray[2].jsonArray
+            .first { (it as? JsonPrimitive)?.contentOrNull?.matches(VISITOR_DATA_REGEX) == true } as JsonPrimitive
+        ).content
     }
 
-
     fun parseCookieString(cookie: String): Map<String, String> =
-    cookie.split("; ")
-        .filter { it.isNotEmpty() }
-        .mapNotNull { part ->
-            val splitIndex = part.indexOf('=')
-            if (splitIndex == -1) null
-            else part.substring(0, splitIndex) to part.substring(splitIndex + 1)
-        }
-        .toMap()
+        cookie.split("; ")
+            .filter { it.isNotEmpty() }
+            .mapNotNull { part ->
+                val splitIndex = part.indexOf('=')
+                if (splitIndex == -1) null
+                else part.substring(0, splitIndex) to part.substring(splitIndex + 1)
+            }
+            .toMap()
 
-    fun ByteArray.toHex(): String = joinToString(separator = "") { eachByte -> "%02x".format(eachByte) }
-    fun sha1(str: String): String = MessageDigest.getInstance("SHA-1").digest(str.toByteArray()).toHex()
-    
+    private fun ByteArray.toHex(): String = joinToString(separator = "") { eachByte -> "%02x".format(eachByte) }
+
+    private fun sha1(str: String): String =
+        MessageDigest.getInstance("SHA-1").digest(str.toByteArray()).toHex()
 }
