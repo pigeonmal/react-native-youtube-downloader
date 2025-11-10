@@ -30,6 +30,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 
 import java.security.MessageDigest
 
@@ -128,10 +129,15 @@ object InnerTube {
     private val VISITOR_DATA_REGEX = Regex("^Cg[t|s]")
 
     suspend fun visitorData(): Result<String> = runCatching {
-        (Json.parseToJsonElement(getSwJsData().bodyAsText().substring(5))
-            .jsonArray[0].jsonArray[2].jsonArray
-            .first { (it as? JsonPrimitive)?.contentOrNull?.matches(VISITOR_DATA_REGEX) == true } as JsonPrimitive
-        ).content
+         Json.parseToJsonElement(getSwJsData().bodyAsText().substring(5))
+            .jsonArray[0]
+            .jsonArray[2]
+            .jsonArray.first {
+                (it as? JsonPrimitive)?.contentOrNull?.let { candidate ->
+                    VISITOR_DATA_REGEX.containsMatchIn(candidate)
+                } ?: false
+            }
+            .jsonPrimitive.content
     }
 
     fun parseCookieString(cookie: String): Map<String, String> =

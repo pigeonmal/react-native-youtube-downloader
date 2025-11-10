@@ -66,11 +66,12 @@ object YTPlayerUtils {
     private val httpClient = OkHttpClient.Builder()
         .build()
 
-    private val MAIN_CLIENT: YouTubeClient = MOBILE
+    private val MAIN_CLIENT: YouTubeClient = ANDROID_VR_1_43_32
 
     private val STREAM_FALLBACK_CLIENTS: Array<YouTubeClient> = arrayOf(
         ANDROID_VR_1_61_48,
         ANDROID_CREATOR,
+        MOBILE,
         IPADOS,
         ANDROID_VR_NO_AUTH,
         TVHTML5,
@@ -78,8 +79,7 @@ object YTPlayerUtils {
         IOS,
         WEB,
         WEB_CREATOR,
-        WEB_REMIX,
-        ANDROID_VR_1_43_32
+        WEB_REMIX
     )
 
 
@@ -94,7 +94,7 @@ object YTPlayerUtils {
     ): Result<PlaybackData> = runCatching {
         if (InnerTube.visitorData == null) {
             InnerTube.visitorData = InnerTube.visitorData().getOrNull()
-            Log.d(logTag, "Generated visitorData random $InnerTube.visitorData")
+            Log.d(logTag, "Generated visitorData random ${InnerTube.visitorData}")
         }
         Log.d(logTag, "Fetching player response for videoId: $videoId, playlistId: $playlistId")
         val signatureTimestamp = getSignatureTimestampOrNull(videoId)
