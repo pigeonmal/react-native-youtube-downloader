@@ -14,6 +14,7 @@
     extensions = [
     "esbenp.prettier-vscode"
   ];
+  
     workspace = {
       onCreate = {
         install = ''
