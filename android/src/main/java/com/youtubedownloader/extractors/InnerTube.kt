@@ -10,11 +10,13 @@ import java.util.Locale
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
-import io.ktor.client.plugins.DefaultRequest
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.compression.*
+import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.headers
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
@@ -22,6 +24,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import io.ktor.http.userAgent
 
 import io.ktor.serialization.kotlinx.json.json
 
@@ -64,9 +67,53 @@ object InnerTube {
             deflate(0.8F)
         }
 
-        install(DefaultRequest) {
-            url(YouTubeClient.API_URL_YOUTUBE_MUSIC)
+      // Enhanced network configuration for better performance
+      engine {
+        config {
+          // Connection pool settings for better connection reuse
+          connectionPool(
+            okhttp3.ConnectionPool(
+              10, // maxIdleConnections
+              5, // keepAliveDuration
+              java.util.concurrent.TimeUnit.MINUTES
+            )
+          )
+
+          // Timeout configurations
+          connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+          readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+          writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+
+          // Enable HTTP/2 for better performance
+          protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
+
+          // Retry on connection failure
+          retryOnConnectionFailure(true)
+
+          // Cache configuration for better performance
+          cache(
+            okhttp3.Cache(
+              directory = java.io.File(System.getProperty("java.io.tmpdir"), "http_cache"),
+              maxSize = 50L * 1024L * 1024L // 50 MB
+            )
+          )
         }
+      }
+
+      // Request timeout configuration
+      install(HttpTimeout) {
+        requestTimeoutMillis = 60000
+        connectTimeoutMillis = 30000
+        socketTimeoutMillis = 60000
+      }
+
+      defaultRequest {
+        url(YouTubeClient.API_URL_YOUTUBE_MUSIC)
+        // Add common headers for better compatibility
+        header("Accept", "application/json")
+        header("Accept-Language", "en-US,en;q=0.9")
+        header("Cache-Control", "no-cache")
+      }
     }
 
     private fun HttpRequestBuilder.ytClient(client: YouTubeClient, cookie: String? = null) {
@@ -86,8 +133,8 @@ object InnerTube {
                     append("Authorization", "SAPISIDHASH ${currentTime}_${sapisidHash}")
                 }
             }
-            append("User-Agent", client.userAgent) 
         }
+        userAgent(client.userAgent)
         parameter("prettyPrint", false)
     }
 

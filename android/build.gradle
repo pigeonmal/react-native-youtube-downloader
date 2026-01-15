@@ -77,7 +77,7 @@ dependencies {
   implementation "com.facebook.react:react-android"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
 
-  implementation "com.github.mostafaalagamy:MetrolistExtractor:8773f0d"
+  implementation "com.github.mostafaalagamy:MetrolistExtractor:2d2d9ed"
   implementation "io.ktor:ktor-client-core:2.3.13"
   implementation "io.ktor:ktor-client-okhttp:2.3.13"
   implementation "io.ktor:ktor-client-encoding:2.3.13"

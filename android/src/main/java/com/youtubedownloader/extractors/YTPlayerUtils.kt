@@ -93,7 +93,7 @@ object YTPlayerUtils {
         forceVisitorData: String?
     ): Result<PlaybackData> = runCatching {
         if (InnerTube.visitorData == null) {
-            InnerTube.visitorData = InnerTube.visitorData().getOrNull()
+            InnerTube.visitorData = InnerTube.visitorData().getOrNull()?.take(80)
             Log.d(logTag, "Generated visitorData random ${InnerTube.visitorData}")
         }
         Log.d(logTag, "Fetching player response for videoId: $videoId, playlistId: $playlistId")
@@ -105,7 +105,7 @@ object YTPlayerUtils {
 
         val getAlsoVideo = videoQuality != null
         Log.d(logTag, "Attempting to get player response using MAIN_CLIENT: ${MAIN_CLIENT.clientName}")
-      
+
         var audioConfig: PlayerResponse.PlayerConfig.AudioConfig? = null
         var videoDetails: PlayerResponse.VideoDetails? = null
         var playbackTracking: PlayerResponse.PlaybackTracking? = null
@@ -150,7 +150,7 @@ object YTPlayerUtils {
                     playbackTracking = streamPlayerResponse.playbackTracking
                 }
             }
-          
+
 
             if (streamPlayerResponse?.playabilityStatus?.status == "OK") {
                 Log.d(logTag, "Player response status OK for client: ${client.clientName}")
