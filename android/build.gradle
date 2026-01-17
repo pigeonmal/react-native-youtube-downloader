@@ -78,9 +78,9 @@ dependencies {
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
 
   implementation "com.github.mostafaalagamy:MetrolistExtractor:2d2d9ed"
-  implementation "io.ktor:ktor-client-core:2.3.13"
-  implementation "io.ktor:ktor-client-okhttp:2.3.13"
-  implementation "io.ktor:ktor-client-encoding:2.3.13"
-  implementation "io.ktor:ktor-client-content-negotiation:2.3.13"
-  implementation "io.ktor:ktor-serialization-kotlinx-json:2.3.13"
+  implementation "io.ktor:ktor-client-core:3.3.1"
+  implementation "io.ktor:ktor-client-okhttp:3.3.1"
+  implementation "io.ktor:ktor-client-encoding:3.3.1"
+  implementation "io.ktor:ktor-client-content-negotiation:3.3.1"
+  implementation "io.ktor:ktor-serialization-kotlinx-json:3.3.1"
 }

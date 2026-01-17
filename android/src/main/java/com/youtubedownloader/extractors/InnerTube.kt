@@ -93,7 +93,7 @@ object InnerTube {
           // Cache configuration for better performance
           cache(
             okhttp3.Cache(
-              directory = java.io.File(System.getProperty("java.io.tmpdir"), "http_cache"),
+              directory = java.io.File(System.getProperty("java.io.tmpdir"), "http_youtube_cache"),
               maxSize = 50L * 1024L * 1024L // 50 MB
             )
           )
@@ -111,7 +111,7 @@ object InnerTube {
         url(YouTubeClient.API_URL_YOUTUBE_MUSIC)
         // Add common headers for better compatibility
         header("Accept", "application/json")
-        header("Accept-Language", "en-US,en;q=0.9")
+        header("Accept-Language", "fr-FR,fr;q=0.9")
         header("Cache-Control", "no-cache")
       }
     }
@@ -171,7 +171,10 @@ object InnerTube {
         }.body<PlayerResponse>()
     }
 
-    suspend fun getSwJsData() = httpClient.get("https://music.youtube.com/sw.js_data")
+    suspend fun getSwJsData() = httpClient.get("https://music.youtube.com/sw.js_data") {
+      header("User-Agent", YouTubeClient.USER_AGENT_WEB)
+      header("Referer", "https://music.youtube.com/")
+    }
 
     private val VISITOR_DATA_REGEX = Regex("^Cg[t|s]")
 

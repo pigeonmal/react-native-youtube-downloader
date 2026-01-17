@@ -93,8 +93,9 @@ object YTPlayerUtils {
         forceVisitorData: String?
     ): Result<PlaybackData> = runCatching {
         if (InnerTube.visitorData == null) {
-            InnerTube.visitorData = InnerTube.visitorData().getOrNull()?.take(80)
-            Log.d(logTag, "Generated visitorData random ${InnerTube.visitorData}")
+          val vsdata = InnerTube.visitorData().getOrNull()
+          Log.d(logTag, "Generated visitorData random $vsdata")
+          InnerTube.visitorData = vsdata?.take(80)
         }
         Log.d(logTag, "Fetching player response for videoId: $videoId, playlistId: $playlistId")
         val signatureTimestamp = getSignatureTimestampOrNull(videoId)
