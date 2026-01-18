@@ -95,7 +95,7 @@ object YTPlayerUtils {
         if (InnerTube.visitorData == null) {
           val vsdata = InnerTube.visitorData().getOrNull()
           Log.d(logTag, "Generated visitorData random $vsdata")
-          InnerTube.visitorData = vsdata?.take(80)
+          InnerTube.visitorData = vsdata
         }
         Log.d(logTag, "Fetching player response for videoId: $videoId, playlistId: $playlistId")
         val signatureTimestamp = getSignatureTimestampOrNull(videoId)
@@ -283,7 +283,7 @@ object YTPlayerUtils {
     }
 
     private fun validateStatus(url: String): Boolean {
-        Log.d(logTag, "Validating stream URL status")
+        Log.d(logTag, "Validating stream URL status $url")
         try {
             val requestBuilder = okhttp3.Request.Builder().head().url(url)
             val response = httpClient.newCall(requestBuilder.build()).execute()

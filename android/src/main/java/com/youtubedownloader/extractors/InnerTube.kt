@@ -171,10 +171,7 @@ object InnerTube {
         }.body<PlayerResponse>()
     }
 
-    suspend fun getSwJsData() = httpClient.get("https://music.youtube.com/sw.js_data") {
-      header("User-Agent", YouTubeClient.USER_AGENT_WEB)
-      header("Referer", "https://music.youtube.com/")
-    }
+    suspend fun getSwJsData() = httpClient.get("https://music.youtube.com/sw.js_data")
 
     private val VISITOR_DATA_REGEX = Regex("^Cg[t|s]")
 
