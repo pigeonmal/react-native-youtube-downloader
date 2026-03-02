@@ -56,7 +56,7 @@
   },
   "homepage": "https://github.com/pigeonmal/react-native-youtube-downloader#readme",
   "publishConfig": {
-    "registry": "https://registry.npmjs.org/",
+    "registry": "https://npm.pkg.github.com",
     "access": "public"
   },
   "devDependencies": {
