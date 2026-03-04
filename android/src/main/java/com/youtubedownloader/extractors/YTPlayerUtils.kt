@@ -215,10 +215,11 @@ object YTPlayerUtils {
             throw Exception("Bad stream player response")
         }
 
-        if (streamPlayerResponse.playabilityStatus.status != "OK") {
-            val errorReason = streamPlayerResponse.playabilityStatus.reason
-            Log.e(logTag, "Playability status not OK: $errorReason")
-            throw Exception("Playability status not OK: $errorReason")
+        val status = streamPlayerResponse.playabilityStatus.status
+
+        if (status != "OK") {
+            Log.e(logTag, "Playability status not OK: $status")
+            throw Exception("Playability status not OK: $status")
         }
 
         if (streamExpiresInSeconds == null) {
