@@ -218,7 +218,11 @@ object YTPlayerUtils {
         val status = streamPlayerResponse.playabilityStatus.status
 
         if (status != "OK") {
-            Log.e(logTag, "Playability status not OK: $status")
+          Log.e(logTag, "Playability status not OK: $status")
+
+          if (status == "ERROR" || status == "REMOVED" || status == "PRIVATED" || status == "COPYRIGHTED") {
+            throw Exception("Invalid song for ever: $status")
+          }
             throw Exception("Playability status not OK: $status")
         }
 
