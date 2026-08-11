@@ -77,10 +77,12 @@ dependencies {
   implementation "com.facebook.react:react-android"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
 
-  implementation "com.github.mostafaalagamy:MetrolistExtractor:2d2d9ed"
-  implementation "io.ktor:ktor-client-core:3.3.1"
-  implementation "io.ktor:ktor-client-okhttp:3.3.1"
-  implementation "io.ktor:ktor-client-encoding:3.3.1"
-  implementation "io.ktor:ktor-client-content-negotiation:3.3.1"
-  implementation "io.ktor:ktor-serialization-kotlinx-json:3.3.1"
+  // 871ea2df is a commit from the main PipePipeExtractor repository. It is
+  // the latest compatible revision before that repository switched its
+  // published bytecode to Java 25, which would break Java 17 Android builds.
+  implementation "com.github.InfinityLoop1308.PipePipeExtractor:extractor:871ea2df"
+  implementation "com.github.TeamNewPipe:nanojson:1d9e1aea9049fc9f85e68b43ba39fe7be1c1f751"
+  implementation "com.squareup.okhttp3:okhttp:4.10.0"
+
+  testImplementation "junit:junit:4.13.2"
 }

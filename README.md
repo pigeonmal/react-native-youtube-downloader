@@ -5,8 +5,8 @@
 A **React Native TurboModule** for extracting YouTube stream information (audio & video) directly from video IDs.
 Provides detailed playback metadata including formats, loudness data, and stream URLs.
 
-A special thanks for Innertube implementation in android,
-newPipeExtractor, and [Metrolist](https://github.com/mostafaalagamy/Metrolist)
+YouTube extraction is provided by the maintained
+[PipePipeExtractor](https://github.com/InfinityLoop1308/PipePipeExtractor) project.
 
 ---
 
@@ -129,6 +129,21 @@ enum VideoQuality {
 ```
 AUTO = if wifi ? 1080p else 720p
 ---
+
+## ✅ Testing
+
+Run the Android unit tests and example debug build from `example/android`:
+
+```bash
+./gradlew :pigeonmal_react-native-youtube-downloader:testDebugUnitTest :app:assembleDebug
+```
+
+The live YouTube smoke test is opt-in because it requires network access:
+
+```bash
+YOUTUBE_LIVE_TEST=1 ./gradlew :pigeonmal_react-native-youtube-downloader:testDebugUnitTest \
+  --tests com.youtubedownloader.extractors.PipePipeExtractorLiveTest
+```
 
 ## 🧑‍💻 Contributing
 

@@ -26,7 +26,7 @@
 -dontwarn org.slf4j.impl.StaticLoggerBinder
 
 
-## Rules for NewPipeExtractor
+## Rules for PipePipeExtractor
 -keep class org.schabi.newpipe.extractor.services.youtube.protos.** { *; }
 -keep class org.schabi.newpipe.extractor.timeago.patterns.** { *; }
 -keep class org.mozilla.javascript.** { *; }
