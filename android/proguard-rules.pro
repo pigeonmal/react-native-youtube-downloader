@@ -41,3 +41,10 @@
 -dontwarn jdk.dynalink.**
 
 -keep class org.json.** { *; }
+
+## BotGuard is called by WebView JavaScript through @JavascriptInterface and
+## must remain intact in consuming release builds.
+-keep class com.youtubedownloader.extractors.potoken.** { *; }
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}

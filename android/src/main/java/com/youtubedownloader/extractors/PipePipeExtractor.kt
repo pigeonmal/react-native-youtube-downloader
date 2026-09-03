@@ -1,5 +1,6 @@
 package com.youtubedownloader.extractors
 
+import android.content.Context
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.WritableMap
 import com.grack.nanojson.JsonObject
@@ -18,6 +19,7 @@ import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Request as ExtractorRequest
 import org.schabi.newpipe.extractor.downloader.Response as ExtractorResponse
 import org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor
+import com.youtubedownloader.extractors.potoken.PoTokenGenerator
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.VideoStream
 import java.nio.charset.StandardCharsets
@@ -259,8 +261,21 @@ object PipePipeExtractor {
     private val EXPIRE_QUERY_PATTERN = Regex("[?&]expire=(\\d+)")
     private val extractionLock = Any()
     private val downloader = PipePipeDownloader()
+    @Volatile
+    private var poTokenGenerator: PoTokenGenerator? = null
+
     init {
         NewPipe.init(downloader)
+    }
+
+    fun configure(context: Context) {
+        if (poTokenGenerator == null) {
+            synchronized(this) {
+                if (poTokenGenerator == null) {
+                    poTokenGenerator = PoTokenGenerator(context.applicationContext)
+                }
+            }
+        }
     }
 
     fun extract(
@@ -281,12 +296,33 @@ object PipePipeExtractor {
             downloader.cookie = cookie
             downloader.visitorData = forceVisitorData
             val hasSapidCookie = !cookie.isNullOrBlank() && cookie.contains("SAPISID")
+            val generator = poTokenGenerator
+            NewPipe.setYoutubePoTokenResolver(
+                generator?.let { activeGenerator ->
+                    java.util.function.Function { id ->
+                        activeGenerator.getBlocking(id, cookie, forceVisitorData)
+                    }
+                },
+            )
             ServiceList.YouTube.tokens = if (hasSapidCookie) cookie else null
             try {
+                // Keep this list limited to clients supported by the bundled
+                // PipePipe/NewPipe extractor. Unsupported names silently fall
+                // back to visionos, which made the previous "safari" retry
+                // ineffective. mweb is useful as an anonymous fallback while
+                // tv_downgraded is the preferred authenticated client.
                 val candidateClients = if (hasSapidCookie) {
-                    listOf("safari", "visionos", "tv_downgraded")
+                    if (generator != null) {
+                        listOf("mweb", "tv_downgraded", "visionos")
+                    } else {
+                        listOf("tv_downgraded", "visionos")
+                    }
                 } else {
-                    listOf("visionos", "tv_downgraded")
+                    if (generator != null) {
+                        listOf("mweb", "visionos", "tv_downgraded")
+                    } else {
+                        listOf("visionos", "tv_downgraded")
+                    }
                 }
 
                 var lastError: Throwable? = null
@@ -346,6 +382,7 @@ object PipePipeExtractor {
                 downloader.cookie = null
                 downloader.visitorData = null
                 ServiceList.YouTube.tokens = null
+                NewPipe.setYoutubePoTokenResolver(null)
             }
         }
     }

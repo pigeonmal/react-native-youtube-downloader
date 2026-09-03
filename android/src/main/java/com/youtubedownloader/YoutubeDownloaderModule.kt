@@ -19,6 +19,11 @@ class YoutubeDownloaderModule(reactContext: ReactApplicationContext) :
   NativeYoutubeDownloaderSpec(reactContext) {
 
   private val scope = CoroutineScope(Dispatchers.IO)
+
+  init {
+      PipePipeExtractor.configure(reactContext)
+  }
+
   override fun getName(): String {
     return NAME
   }
