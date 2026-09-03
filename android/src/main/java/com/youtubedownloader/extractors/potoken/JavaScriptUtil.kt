@@ -7,7 +7,7 @@ import org.json.JSONObject
 /** Converts YouTube's BotGuard challenge into the object expected by the local JS runner. */
 internal fun parseChallengeData(raw: String): String {
     val scrambled = JSONArray(raw)
-    val challenge = if (scrambled.length() > 1 && scrambled.optString(1).isNotEmpty()) {
+    val challenge = if (scrambled.length() > 1 && scrambled.opt(1) is String) {
         JSONArray(descramble(scrambled.getString(1)))
     } else {
         scrambled.optJSONArray(0) ?: throw PoTokenException("Invalid BotGuard challenge")
@@ -45,6 +45,8 @@ internal fun stringToU8(identifier: String): String =
 
 internal fun u8ToBase64(poToken: String): String {
     val bytes = poToken.split(',').filter { it.isNotBlank() }.map { it.toInt().toByte() }.toByteArray()
+    // This is the exact representation expected by NewPipe's MWEB request:
+    // URL-safe Base64 without line breaks or padding.
     return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
 }
 

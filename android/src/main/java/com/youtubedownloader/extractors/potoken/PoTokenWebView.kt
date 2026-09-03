@@ -70,6 +70,7 @@ internal class PoTokenWebView private constructor(
     }
 
     private fun start() {
+        TokenLog.tag(TAG).d("Starting BotGuard WebView")
         scope.launch {
             try {
                 val html = withContext(Dispatchers.IO) {
@@ -109,6 +110,7 @@ internal class PoTokenWebView private constructor(
 
     @JavascriptInterface
     fun onRunBotguardResult(botguardResponse: String) {
+        TokenLog.tag(TAG).d("BotGuard challenge completed")
         requestBotguard(
             "https://www.youtube.com/api/jnn/v1/GenerateIT",
             "[ \"$REQUEST_KEY\", \"$botguardResponse\" ]",
@@ -120,11 +122,7 @@ internal class PoTokenWebView private constructor(
                 webView.evaluateJavascript(
                     """try {
                         this.integrityToken = $integrityToken
-                        createPoTokenMinter(webPoSignalOutput, integrityToken).then(function() {
-                            $JS_INTERFACE.onMinterCreated()
-                        }).catch(function(error) {
-                            $JS_INTERFACE.onJsInitializationError(error + "\n" + (error.stack || ""))
-                        })
+                        $JS_INTERFACE.onMinterCreated()
                     } catch (error) {
                         $JS_INTERFACE.onJsInitializationError(error + "\n" + error.stack)
                     }""",
@@ -143,6 +141,7 @@ internal class PoTokenWebView private constructor(
 
     @JavascriptInterface
     fun onMinterCreated() {
+        TokenLog.tag(TAG).d("BotGuard minter ready")
         if (initializationFinished.compareAndSet(false, true)) initialization.resume(this)
     }
 
@@ -160,11 +159,12 @@ internal class PoTokenWebView private constructor(
                                 var requestKey = "$key";
                                 try {
                                     var u8Identifier = ${stringToU8(identifier)};
-                                    obtainPoToken(u8Identifier).then(function(result) {
-                                        $JS_INTERFACE.onObtainPoTokenResult(requestKey, result.join(","));
-                                    }).catch(function(error) {
-                                        $JS_INTERFACE.onObtainPoTokenError(requestKey, error + "\n" + (error.stack || ""));
-                                    });
+                                    var result = obtainPoToken(
+                                        webPoSignalOutput,
+                                        integrityToken,
+                                        u8Identifier
+                                    );
+                                    $JS_INTERFACE.onObtainPoTokenResult(requestKey, result.join(","));
                                 } catch (error) {
                                     $JS_INTERFACE.onObtainPoTokenError(requestKey, error + "\n" + error.stack);
                                 }
@@ -236,6 +236,7 @@ internal class PoTokenWebView private constructor(
                             .build(),
                     ).execute().use { result ->
                         if (!result.isSuccessful) throw PoTokenException("BotGuard request failed")
+                        TokenLog.tag(TAG).d("BotGuard request succeeded")
                         result.body?.string().orEmpty()
                     }
                 }

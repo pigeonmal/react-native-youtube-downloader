@@ -21,14 +21,18 @@ internal class PoTokenGenerator(context: Context) {
         cookie: String?,
         preferredVisitorData: String?,
     ): YoutubePoTokenResult = synchronized(lock) {
+        TokenLog.tag(TAG).d("PoToken requested")
         if (runCatching { CookieManager.getInstance() }.isFailure) {
+            TokenLog.tag(TAG).w("Android WebView is unavailable")
             throw BadWebViewException("Android WebView is unavailable")
         }
 
         val visitorData = preferredVisitorData?.trim().takeUnless { it.isNullOrEmpty() }
             ?: getVisitorData(cookie)
+        TokenLog.tag(TAG).d("Visitor data ready")
         val current = webView
         if (current == null || current.isExpired || current.isDead || sessionVisitorData != visitorData) {
+            TokenLog.tag(TAG).d("Creating BotGuard WebView")
             closeLocked()
             val created = runBlocking(Dispatchers.IO) {
                 PoTokenWebView.getNewPoTokenGenerator(applicationContext)
@@ -38,8 +42,10 @@ internal class PoTokenGenerator(context: Context) {
                 runBlocking(Dispatchers.IO) { created.generatePoToken(visitorData) }
                 webView = created
                 sessionVisitorData = visitorData
+                TokenLog.tag(TAG).d("BotGuard WebView ready")
             } catch (error: Throwable) {
                 created.close()
+                TokenLog.tag(TAG).e("BotGuard WebView setup failed: ${error::class.simpleName ?: "unknown"}")
                 throw error
             }
         }
@@ -49,6 +55,7 @@ internal class PoTokenGenerator(context: Context) {
             val playerPoToken = runBlocking(Dispatchers.IO) {
                 active.generatePoToken(videoId)
             }
+            TokenLog.tag(TAG).d("Player PoToken ready")
             YoutubePoTokenResult(
                 visitorData,
                 YoutubeParsingHelper.getClientVersion(),
@@ -56,6 +63,7 @@ internal class PoTokenGenerator(context: Context) {
             )
         } catch (error: Throwable) {
             closeLocked()
+            TokenLog.tag(TAG).e("Player PoToken failed: ${error::class.simpleName ?: "unknown"}")
             throw error
         }
     }
@@ -80,5 +88,9 @@ internal class PoTokenGenerator(context: Context) {
         webView?.close()
         webView = null
         sessionVisitorData = null
+    }
+
+    private companion object {
+        const val TAG = "PoTokenGenerator"
     }
 }

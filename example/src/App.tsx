@@ -9,7 +9,7 @@ export default function App() {
   const [result, setResult] = useState<PlaybackData | null>(null);
 
   useEffect(() => {
-    const videoID = 'DGMIUHewL2c';
+    const videoID = 'dQw4w9WgXcQ';
     YoutubeDownloader.extractYoutubeStream({
       videoId: videoID,
       audioQuality: 'AUTO',
