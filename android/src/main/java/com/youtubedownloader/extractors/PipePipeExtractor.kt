@@ -6,6 +6,10 @@ import com.facebook.react.bridge.WritableMap
 import com.grack.nanojson.JsonObject
 import com.youtubedownloader.models.AudioQuality
 import com.youtubedownloader.models.VideoQuality
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.OkHttpClient
@@ -23,8 +27,25 @@ import com.youtubedownloader.extractors.potoken.PoTokenGenerator
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.VideoStream
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.util.LinkedHashMap
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+
+private data class PlaybackCacheKey(
+    val videoId: String,
+    val playlistId: String?,
+    val audioQuality: AudioQuality,
+    val videoQuality: VideoQuality?,
+    val isMetered: Boolean,
+    val cookieFingerprint: String,
+    val visitorDataFingerprint: String,
+)
+
+private data class CachedPlayback(
+    val data: PlaybackData,
+    val expiresAtMillis: Long,
+)
 
 data class PlaybackData(
     val audioConfig: AudioConfig?,
@@ -260,7 +281,18 @@ private class PipePipeDownloader : Downloader() {
 object PipePipeExtractor {
     private val EXPIRE_QUERY_PATTERN = Regex("[?&]expire=(\\d+)")
     private val extractionLock = Any()
+    private val warmUpScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val downloader = PipePipeDownloader()
+    private const val CACHE_EXPIRY_MARGIN_MS = 30_000L
+    private const val MAX_CACHED_PLAYBACKS = 32
+    private val playbackCache = object : LinkedHashMap<PlaybackCacheKey, CachedPlayback>(
+        MAX_CACHED_PLAYBACKS,
+        0.75f,
+        true,
+    ) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<PlaybackCacheKey, CachedPlayback>?) =
+            size > MAX_CACHED_PLAYBACKS
+    }
     @Volatile
     private var poTokenGenerator: PoTokenGenerator? = null
 
@@ -274,6 +306,15 @@ object PipePipeExtractor {
                 if (poTokenGenerator == null) {
                     poTokenGenerator = PoTokenGenerator(context.applicationContext)
                 }
+            }
+        }
+    }
+
+    fun warmUp() {
+        val generator = poTokenGenerator ?: return
+        warmUpScope.launch {
+            synchronized(extractionLock) {
+                generator.warmUp()
             }
         }
     }
@@ -293,6 +334,17 @@ object PipePipeExtractor {
         }
 
         synchronized(extractionLock) {
+            val cacheKey = PlaybackCacheKey(
+                videoId = normalizedVideoId,
+                playlistId = playlistId,
+                audioQuality = audioQuality,
+                videoQuality = videoQuality,
+                isMetered = isMetered,
+                cookieFingerprint = fingerprint(cookie),
+                visitorDataFingerprint = fingerprint(forceVisitorData),
+            )
+            getCachedPlayback(cacheKey)?.let { return it }
+
             downloader.cookie = cookie
             downloader.visitorData = forceVisitorData
             val hasSapidCookie = !cookie.isNullOrBlank() && cookie.contains("SAPISID")
@@ -366,12 +418,14 @@ object PipePipeExtractor {
                                 )
                         }
 
-                        return createPlaybackData(
+                        val playbackData = createPlaybackData(
                             extractor,
                             audioStream,
                             videoStream,
                             client,
                         )
+                        cachePlayback(cacheKey, playbackData)
+                        return playbackData
                     } catch (t: Throwable) {
                         lastError = t
                     }
@@ -384,6 +438,31 @@ object PipePipeExtractor {
                 NewPipe.setYoutubePoTokenResolver(null)
             }
         }
+    }
+
+    private fun getCachedPlayback(key: PlaybackCacheKey): PlaybackData? {
+        val cached = playbackCache[key] ?: return null
+        if (cached.expiresAtMillis - System.currentTimeMillis() <= CACHE_EXPIRY_MARGIN_MS) {
+            playbackCache.remove(key)
+            return null
+        }
+        return cached.data
+    }
+
+    private fun cachePlayback(key: PlaybackCacheKey, data: PlaybackData) {
+        if (data.streamExpiresInSeconds * 1000L <= CACHE_EXPIRY_MARGIN_MS) return
+        playbackCache[key] = CachedPlayback(
+            data = data,
+            expiresAtMillis = System.currentTimeMillis() + data.streamExpiresInSeconds * 1000L,
+        )
+    }
+
+    private fun fingerprint(value: String?): String {
+        val normalized = value?.trim().orEmpty()
+        if (normalized.isEmpty()) return ""
+        return MessageDigest.getInstance("SHA-256")
+            .digest(normalized.toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(Locale.ROOT, byte) }
     }
 
     private fun createPlaybackData(

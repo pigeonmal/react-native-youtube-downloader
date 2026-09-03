@@ -1,6 +1,7 @@
 package com.youtubedownloader.extractors.potoken
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.webkit.CookieManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -13,8 +14,36 @@ import org.schabi.newpipe.extractor.services.youtube.YoutubePoTokenResult
 internal class PoTokenGenerator(context: Context) {
     private val applicationContext = context.applicationContext
     private val lock = Any()
+    private val preferences: SharedPreferences = applicationContext.getSharedPreferences(
+        PREFERENCES_NAME,
+        Context.MODE_PRIVATE,
+    )
     private var webView: PoTokenWebView? = null
     private var sessionVisitorData: String? = null
+    private var sessionCookieKey: String? = null
+    private var warmUpKey: String? = null
+
+    /** Prepares BotGuard on the caller's background thread without minting a video token. */
+    fun warmUp(cookie: String? = null, preferredVisitorData: String? = null) {
+        val requestedKey = contextKey(cookie, preferredVisitorData)
+        synchronized(lock) {
+            val preferred = preferredVisitorData?.trim().takeUnless { it.isNullOrEmpty() }
+            if (preferred != null && isReadyLocked(preferred, cookie.orEmpty())) return
+            if (warmUpKey == requestedKey) return
+            warmUpKey = requestedKey
+            try {
+                val visitorData = resolveVisitorData(cookie, preferredVisitorData)
+                ensureWebViewLocked(visitorData, cookie.orEmpty())
+                TokenLog.tag(TAG).d("BotGuard warmed up")
+            } catch (error: Throwable) {
+                TokenLog.tag(TAG).w(
+                    "BotGuard warm-up failed: ${error::class.simpleName ?: "unknown"}",
+                )
+            } finally {
+                warmUpKey = null
+            }
+        }
+    }
 
     fun getBlocking(
         videoId: String,
@@ -27,28 +56,9 @@ internal class PoTokenGenerator(context: Context) {
             throw BadWebViewException("Android WebView is unavailable")
         }
 
-        val visitorData = preferredVisitorData?.trim().takeUnless { it.isNullOrEmpty() }
-            ?: getVisitorData(cookie)
+        val visitorData = resolveVisitorData(cookie, preferredVisitorData)
         TokenLog.tag(TAG).d("Visitor data ready")
-        val current = webView
-        if (current == null || current.isExpired || current.isDead || sessionVisitorData != visitorData) {
-            TokenLog.tag(TAG).d("Creating BotGuard WebView")
-            closeLocked()
-            val created = runBlocking(Dispatchers.IO) {
-                PoTokenWebView.getNewPoTokenGenerator(applicationContext)
-            }
-            try {
-                // YouTube expects one visitor-bound token before video-bound tokens are minted.
-                runBlocking(Dispatchers.IO) { created.generatePoToken(visitorData) }
-                webView = created
-                sessionVisitorData = visitorData
-                TokenLog.tag(TAG).d("BotGuard WebView ready")
-            } catch (error: Throwable) {
-                created.close()
-                TokenLog.tag(TAG).e("BotGuard WebView setup failed: ${error::class.simpleName ?: "unknown"}")
-                throw error
-            }
-        }
+        ensureWebViewLocked(visitorData, cookie.orEmpty())
 
         val active = webView ?: throw PoTokenException("PoToken WebView was not created")
         try {
@@ -84,13 +94,68 @@ internal class PoTokenGenerator(context: Context) {
         )
     }
 
+    private fun resolveVisitorData(cookie: String?, preferredVisitorData: String?): String {
+        val preferred = preferredVisitorData?.trim().takeUnless { it.isNullOrEmpty() }
+        if (preferred != null) return preferred
+
+        val cookieKey = cookie.orEmpty()
+        val cachedVisitorData = sessionVisitorData?.takeIf { sessionCookieKey == cookieKey }
+            ?: cookieKey.takeIf { it.isEmpty() }?.let {
+                preferences.getString(VISITOR_DATA_KEY, null)
+            }
+        return cachedVisitorData ?: getVisitorData(cookie).also {
+            sessionVisitorData = it
+            sessionCookieKey = cookieKey
+            if (cookieKey.isEmpty()) {
+                preferences.edit().putString(VISITOR_DATA_KEY, it).apply()
+            }
+        }
+    }
+
+    private fun ensureWebViewLocked(visitorData: String, cookieKey: String) {
+        val current = webView
+        if (current != null && !current.isExpired && !current.isDead &&
+            sessionVisitorData == visitorData && sessionCookieKey == cookieKey
+        ) return
+
+        TokenLog.tag(TAG).d("Creating BotGuard WebView")
+        closeLocked()
+        val created = runBlocking(Dispatchers.IO) {
+            PoTokenWebView.getNewPoTokenGenerator(applicationContext)
+        }
+        try {
+            // YouTube expects one visitor-bound token before video-bound tokens are minted.
+            runBlocking(Dispatchers.IO) { created.generatePoToken(visitorData) }
+            webView = created
+            sessionVisitorData = visitorData
+            sessionCookieKey = cookieKey
+            TokenLog.tag(TAG).d("BotGuard WebView ready")
+        } catch (error: Throwable) {
+            created.close()
+            TokenLog.tag(TAG).e("BotGuard WebView setup failed: ${error::class.simpleName ?: "unknown"}")
+            throw error
+        }
+    }
+
+    private fun isReadyLocked(visitorData: String, cookieKey: String): Boolean {
+        val current = webView
+        return current != null && !current.isExpired && !current.isDead &&
+            sessionVisitorData == visitorData && sessionCookieKey == cookieKey
+    }
+
+    private fun contextKey(cookie: String?, preferredVisitorData: String?): String =
+        cookie.orEmpty() + "\u0000" + preferredVisitorData.orEmpty()
+
     private fun closeLocked() {
         webView?.close()
         webView = null
         sessionVisitorData = null
+        sessionCookieKey = null
     }
 
     private companion object {
         const val TAG = "PoTokenGenerator"
+        const val PREFERENCES_NAME = "youtube_downloader_potoken"
+        const val VISITOR_DATA_KEY = "anonymous_visitor_data"
     }
 }

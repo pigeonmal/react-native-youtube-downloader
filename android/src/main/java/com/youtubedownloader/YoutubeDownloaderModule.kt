@@ -22,6 +22,7 @@ class YoutubeDownloaderModule(reactContext: ReactApplicationContext) :
 
   init {
       PipePipeExtractor.configure(reactContext)
+      PipePipeExtractor.warmUp()
   }
 
   override fun getName(): String {
