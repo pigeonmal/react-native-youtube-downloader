@@ -306,22 +306,21 @@ object PipePipeExtractor {
             )
             ServiceList.YouTube.tokens = if (hasSapidCookie) cookie else null
             try {
-                // Keep this list limited to clients supported by the bundled
-                // PipePipe/NewPipe extractor. Unsupported names silently fall
-                // back to visionos, which made the previous "safari" retry
-                // ineffective. mweb is useful as an anonymous fallback while
-                // tv_downgraded is the preferred authenticated client.
+                // These are the clients supported by the bundled
+                // PipePipe/NewPipe extractor. The final two provide additional
+                // video-capable fallbacks when the primary clients cannot
+                // return a usable stream for a particular video.
                 val candidateClients = if (hasSapidCookie) {
                     if (generator != null) {
-                        listOf("mweb", "tv_downgraded", "visionos")
+                        listOf("mweb", "tv_downgraded", "visionos", "web", "tv_simply")
                     } else {
-                        listOf("tv_downgraded", "visionos")
+                        listOf("tv_downgraded", "visionos", "web", "tv_simply")
                     }
                 } else {
                     if (generator != null) {
-                        listOf("mweb", "visionos", "tv_downgraded")
+                        listOf("mweb", "visionos", "tv_downgraded", "web", "tv_simply")
                     } else {
-                        listOf("visionos", "tv_downgraded")
+                        listOf("visionos", "tv_downgraded", "web", "tv_simply")
                     }
                 }
 

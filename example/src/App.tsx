@@ -21,7 +21,15 @@ export default function App() {
   return (
     <View style={styles.container}>
       {result != null ? (
-        <Text>Result: {JSON.stringify(result.videoDetails)}</Text>
+        <Text>
+          {'Result: '}
+          {JSON.stringify({
+            clientName: result.clientName,
+            videoDetails: result.videoDetails,
+            audioItag: result.audioStream.format.itag,
+            videoItag: result.videoStream?.format.itag,
+          })}
+        </Text>
       ) : (
         <Text>WAIT</Text>
       )}
