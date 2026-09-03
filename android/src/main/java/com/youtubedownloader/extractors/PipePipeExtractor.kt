@@ -280,50 +280,72 @@ object PipePipeExtractor {
         synchronized(extractionLock) {
             downloader.cookie = cookie
             downloader.visitorData = forceVisitorData
+            val hasSapidCookie = !cookie.isNullOrBlank() && cookie.contains("SAPISID")
+            ServiceList.YouTube.tokens = if (hasSapidCookie) cookie else null
             try {
-                val extractor = ServiceList.YouTube.getStreamExtractor(
-                    buildVideoUrl(normalizedVideoId, playlistId)
-                ) as YoutubeStreamExtractor
-                extractor.fetchPage()
-                val audioStream = selectAudioStream(
-                    extractor.getAudioStreams()
-                        .filter { it.isUrl && it.content.isNotBlank() }
-                        .map { stream ->
-                            RankedAudioStream(stream, stream.getBitrateOrAverage())
-                        },
-                    audioQuality,
-                    isMetered,
-                ) ?: throw IllegalStateException("PipePipeExtractor returned no audio URL")
-
-                val videoStream = videoQuality?.let { requestedQuality ->
-                    val availableVideoStreams = (
-                        extractor.getVideoOnlyStreams().ifEmpty {
-                            extractor.getVideoStreams()
-                        }
-                        )
-                        .filter { it.isUrl && it.content.isNotBlank() }
-                        .map { stream ->
-                            RankedVideoStream(
-                                stream,
-                                stream.heightOrZero(),
-                                stream.getBitrate(),
-                            )
-                        }
-                    selectVideoStream(availableVideoStreams, requestedQuality, isMetered)
-                        ?: throw IllegalStateException(
-                            "PipePipeExtractor returned no video URL for $requestedQuality"
-                        )
+                val candidateClients = if (hasSapidCookie) {
+                    listOf("safari", "visionos", "tv_downgraded")
+                } else {
+                    listOf("visionos", "tv_downgraded")
                 }
 
-                return createPlaybackData(
-                    extractor,
-                    audioStream,
-                    videoStream,
-                    "default",
-                )
+                var lastError: Throwable? = null
+                for (client in candidateClients) {
+                    try {
+                        NewPipe.setYoutubePlayerClient(client)
+                        val extractor = ServiceList.YouTube.getStreamExtractor(
+                            buildVideoUrl(normalizedVideoId, playlistId)
+                        ) as YoutubeStreamExtractor
+                        extractor.fetchPage()
+
+                        val audioStreams = extractor.getAudioStreams()
+                            .filter { it.isUrl && it.content.isNotBlank() }
+                        if (audioStreams.isEmpty()) {
+                            continue
+                        }
+
+                        val audioStream = selectAudioStream(
+                            audioStreams.map { stream ->
+                                RankedAudioStream(stream, stream.getBitrateOrAverage())
+                            },
+                            audioQuality,
+                            isMetered,
+                        ) ?: continue
+
+                        val videoStream = videoQuality?.let { requestedQuality ->
+                            val availableVideoStreams = (
+                                extractor.getVideoOnlyStreams().ifEmpty {
+                                    extractor.getVideoStreams()
+                                }
+                            ).filter { it.isUrl && it.content.isNotBlank() }
+                            .map { stream ->
+                                RankedVideoStream(
+                                    stream,
+                                    stream.heightOrZero(),
+                                    stream.getBitrate(),
+                                )
+                            }
+                            selectVideoStream(availableVideoStreams, requestedQuality, isMetered)
+                                ?: throw IllegalStateException(
+                                    "PipePipeExtractor returned no video URL for $requestedQuality"
+                                )
+                        }
+
+                        return createPlaybackData(
+                            extractor,
+                            audioStream,
+                            videoStream,
+                            client,
+                        )
+                    } catch (t: Throwable) {
+                        lastError = t
+                    }
+                }
+                throw lastError ?: IllegalStateException("PipePipeExtractor returned no audio URL")
             } finally {
                 downloader.cookie = null
                 downloader.visitorData = null
+                ServiceList.YouTube.tokens = null
             }
         }
     }

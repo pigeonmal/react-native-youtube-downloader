@@ -77,12 +77,17 @@ dependencies {
   implementation "com.facebook.react:react-android"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
 
-  // 871ea2df is a commit from the main PipePipeExtractor repository. It is
-  // the latest compatible revision before that repository switched its
-  // published bytecode to Java 25, which would break Java 17 Android builds.
-  implementation "com.github.InfinityLoop1308.PipePipeExtractor:extractor:871ea2df"
+  implementation fileTree(dir: "libs", include: ["*.jar"])
   implementation "com.github.TeamNewPipe:nanojson:1d9e1aea9049fc9f85e68b43ba39fe7be1c1f751"
-  implementation "com.squareup.okhttp3:okhttp:4.10.0"
+  implementation "org.jsoup:jsoup:1.18.3"
+  implementation "org.java-websocket:Java-WebSocket:1.5.7"
+  implementation "org.nibor.autolink:autolink:0.11.0"
+  implementation "com.google.protobuf:protobuf-java:4.29.3"
+  implementation "org.brotli:dec:0.1.2"
+  implementation "org.apache.commons:commons-lang3:3.17.0"
+  compileOnly "org.bouncycastle:bcprov-jdk18on:1.80"
+  implementation "com.squareup.okhttp3:okhttp:4.12.0"
 
   testImplementation "junit:junit:4.13.2"
+  testImplementation "org.bouncycastle:bcprov-jdk18on:1.80"
 }

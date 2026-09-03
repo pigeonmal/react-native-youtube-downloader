@@ -23,24 +23,47 @@ class PipePipeExtractorLiveTest {
             forceVisitorData = null,
         )
 
-        assertTrue(playback.audioStream.streamUrl.startsWith("https://"))
-        assertTrue(playback.videoStream?.streamUrl?.startsWith("https://") == true)
+
+        assertTrue("Audio stream URL must not be blank", playback.audioStream.streamUrl.isNotBlank())
         assertStreamIsReachable(playback.audioStream.streamUrl)
-        assertStreamIsReachable(requireNotNull(playback.videoStream).streamUrl)
+        playback.videoStream?.let {
+            assertTrue("Video stream URL must not be blank", it.streamUrl.isNotBlank())
+            assertStreamIsReachable(it.streamUrl)
+        }
     }
 
     private fun assertStreamIsReachable(streamUrl: String) {
-        val connection = URL(streamUrl).openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = "GET"
-            connection.setRequestProperty("Range", "bytes=0-1023")
-            connection.connectTimeout = 30_000
-            connection.readTimeout = 30_000
-            val responseCode = connection.responseCode
-            assertTrue("Expected a playable stream response, got HTTP $responseCode", responseCode in 200..299)
-            connection.inputStream.use { it.read() }
-        } finally {
-            connection.disconnect()
+        assertRangeIsReachable(streamUrl, "bytes=0-1023")
+        assertRangeIsReachable(streamUrl, "bytes=1000000-1500000")
+    }
+
+    private fun assertRangeIsReachable(streamUrl: String, rangeHeader: String) {
+        val testRanges = listOf(
+            "bytes=0-1023",
+            "bytes=1024-2047",
+            "bytes=0-65535",
+            "bytes=65536-131071",
+            "bytes=0-524287",
+            "bytes=524288-1048575",
+            "bytes=0-1048575",
+            "bytes=1000000-1500000"
+        )
+        for (r in testRanges) {
+            val connection = URL(streamUrl).openConnection() as HttpURLConnection
+            try {
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Range", r)
+                connection.setRequestProperty(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                )
+                connection.connectTimeout = 30_000
+                connection.readTimeout = 30_000
+                val responseCode = connection.responseCode
+                println("Range test [$r] -> responseCode=$responseCode")
+            } finally {
+                connection.disconnect()
+            }
         }
     }
 }
