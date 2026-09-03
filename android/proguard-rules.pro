@@ -27,6 +27,7 @@
 
 
 ## Rules for PipePipeExtractor
+-dontwarn edu.umd.cs.findbugs.annotations.**
 -keep class org.schabi.newpipe.extractor.services.youtube.protos.** { *; }
 -keep class org.schabi.newpipe.extractor.timeago.patterns.** { *; }
 -keep class org.mozilla.javascript.** { *; }
