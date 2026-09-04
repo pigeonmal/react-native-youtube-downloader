@@ -8,18 +8,18 @@ import org.junit.Test
 
 class StreamSelectionTest {
     @Test
-    fun lowAndMeteredAutoPreferTheLowestAudioBitrate() {
+    fun lowPrefersTheLowestAudioBitrate() {
         val streams = listOf(
             RankedAudioStream("high", 192_000),
             RankedAudioStream("low", 64_000),
         )
 
         assertEquals("low", selectAudioStream(streams, AudioQuality.LOW, false))
-        assertEquals("low", selectAudioStream(streams, AudioQuality.AUTO, true))
+        assertEquals("low", selectAudioStream(streams, AudioQuality.LOW, true))
     }
 
     @Test
-    fun highAndUnmeteredAutoPreferTheHighestAudioBitrate() {
+    fun autoAndHighPreferTheHighestAudioBitrate() {
         val streams = listOf(
             RankedAudioStream("high", 192_000),
             RankedAudioStream("low", 64_000),
@@ -27,6 +27,7 @@ class StreamSelectionTest {
 
         assertEquals("high", selectAudioStream(streams, AudioQuality.HIGH, true))
         assertEquals("high", selectAudioStream(streams, AudioQuality.AUTO, false))
+        assertEquals("high", selectAudioStream(streams, AudioQuality.AUTO, true))
     }
 
     @Test

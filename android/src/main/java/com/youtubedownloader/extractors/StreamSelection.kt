@@ -19,15 +19,15 @@ internal fun <T> selectAudioStream(
     quality: AudioQuality,
     isMetered: Boolean,
 ): T? {
-    if (streams.isEmpty()) return null
+    val validStreams = streams.filter { it.bitrate > 0 }.ifEmpty { streams }
+    if (validStreams.isEmpty()) return null
 
-    val useLowestBitrate = quality == AudioQuality.LOW ||
-        (quality == AudioQuality.AUTO && isMetered)
+    val useLowestBitrate = quality == AudioQuality.LOW
 
     return if (useLowestBitrate) {
-        streams.minWithOrNull(compareBy<RankedAudioStream<T>> { it.bitrate })?.value
+        validStreams.minWithOrNull(compareBy<RankedAudioStream<T>> { it.bitrate })?.value
     } else {
-        streams.maxWithOrNull(compareBy<RankedAudioStream<T>> { it.bitrate })?.value
+        validStreams.maxWithOrNull(compareBy<RankedAudioStream<T>> { it.bitrate })?.value
     }
 }
 
