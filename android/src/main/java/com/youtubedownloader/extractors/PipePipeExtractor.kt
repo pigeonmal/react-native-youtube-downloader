@@ -374,7 +374,7 @@ object PipePipeExtractor {
                 val playbackData = if (hasCookie) {
                     try {
                         configureExtractionContext(null, null, generator)
-                        Log.d(TAG, "Anonymous YouTube extraction started for $normalizedVideoId")
+                        debugLog("Anonymous YouTube extraction started for $normalizedVideoId")
                         extractWithClients(
                             videoId = normalizedVideoId,
                             playlistId = playlistId,
@@ -383,10 +383,10 @@ object PipePipeExtractor {
                             isMetered = isMetered,
                             clients = anonymousClients(generator),
                         ).also {
-                            Log.d(TAG, "Anonymous YouTube extraction succeeded for $normalizedVideoId")
+                            debugLog("Anonymous YouTube extraction succeeded for $normalizedVideoId")
                         }
                     } catch (anonymousError: Throwable) {
-                        Log.d(TAG, "Anonymous extraction unavailable; trying authenticated YouTube extraction for $normalizedVideoId")
+                        debugLog("Anonymous extraction unavailable; trying authenticated YouTube extraction for $normalizedVideoId")
                         try {
                             configureExtractionContext(cookie, forceVisitorData, generator)
                             extractWithClients(
@@ -456,6 +456,12 @@ object PipePipeExtractor {
         }
 
     private const val TAG = "PipePipeExtractor"
+
+    private fun debugLog(message: String) {
+        // Keep the extractor usable in local JVM tests where android.util.Log
+        // is not backed by the Android runtime.
+        runCatching { Log.d(TAG, message) }
+    }
 
     private fun extractWithClients(
         videoId: String,

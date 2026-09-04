@@ -13,16 +13,7 @@ class PipePipeExtractorLiveTest {
     fun extractsPlayableAudioAndVideoUrlsFromYouTube() {
         assumeTrue("Set YOUTUBE_LIVE_TEST=1 to run the network smoke test", System.getenv("YOUTUBE_LIVE_TEST") == "1")
 
-        val playback = PipePipeExtractor.extract(
-            videoId = "dQw4w9WgXcQ",
-            playlistId = null,
-            audioQuality = AudioQuality.AUTO,
-            videoQuality = VideoQuality.QUALITY_360P,
-            isMetered = false,
-            cookie = null,
-            forceVisitorData = null,
-        )
-
+        val playback = extractPublicVideo()
 
         assertTrue("Audio stream URL must not be blank", playback.audioStream.streamUrl.isNotBlank())
         assertStreamIsReachable(playback.audioStream.streamUrl)
@@ -30,6 +21,43 @@ class PipePipeExtractorLiveTest {
             assertTrue("Video stream URL must not be blank", it.streamUrl.isNotBlank())
             assertStreamIsReachable(it.streamUrl)
         }
+    }
+
+    @Test
+    fun extractsPublicVideoWhenAuthenticationCookieIsPresent() {
+        assumeTrue("Set YOUTUBE_LIVE_TEST=1 to run the network smoke test", System.getenv("YOUTUBE_LIVE_TEST") == "1")
+
+        // Regression test for YouTube's logged-in extraction block. The public
+        // attempt must not send this cookie to the anonymous player clients.
+        val playback = PipePipeExtractor.extract(
+            videoId = "dQw4w9WgXcQ",
+            playlistId = null,
+            audioQuality = AudioQuality.AUTO,
+            videoQuality = null,
+            isMetered = false,
+            cookie = "SAPISID=test-cookie; SID=test-cookie",
+            forceVisitorData = "test-visitor-data",
+        )
+
+        assertTrue("Audio stream URL must not be blank", playback.audioStream.streamUrl.isNotBlank())
+        assertStreamIsReachable(playback.audioStream.streamUrl)
+    }
+
+    private fun extractPublicVideo() = PipePipeExtractor.extract(
+        videoId = "dQw4w9WgXcQ",
+        playlistId = null,
+        audioQuality = AudioQuality.AUTO,
+        videoQuality = VideoQuality.QUALITY_360P,
+        isMetered = false,
+        cookie = null,
+        forceVisitorData = null,
+    )
+
+    private fun assertSuccessfulRangeResponse(responseCode: Int, rangeHeader: String) {
+        assertTrue(
+            "Range $rangeHeader must return a successful HTTP response, got $responseCode",
+            responseCode in 200..299,
+        )
     }
 
     private fun assertStreamIsReachable(streamUrl: String) {
@@ -60,7 +88,7 @@ class PipePipeExtractorLiveTest {
                 connection.connectTimeout = 30_000
                 connection.readTimeout = 30_000
                 val responseCode = connection.responseCode
-                println("Range test [$r] -> responseCode=$responseCode")
+                assertSuccessfulRangeResponse(responseCode, r)
             } finally {
                 connection.disconnect()
             }
