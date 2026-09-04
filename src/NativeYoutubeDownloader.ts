@@ -15,6 +15,9 @@ export interface PlaybackData {
 export interface StreamPlayback {
   format: StreamFormat;
   streamUrl: string;
+  requireBoundedRange?: boolean;
+  useRangeChunks?: boolean;
+  rangeChunkSizeBytes?: number;
 }
 
 export interface AudioConfig {

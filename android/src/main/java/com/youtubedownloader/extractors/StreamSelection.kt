@@ -6,6 +6,9 @@ import com.youtubedownloader.models.VideoQuality
 internal data class RankedAudioStream<T>(
     val value: T,
     val bitrate: Int,
+    val mimeType: String? = null,
+    val audioChannels: Int? = null,
+    val sampleRate: Int? = null,
 )
 
 internal data class RankedVideoStream<T>(
@@ -22,13 +25,50 @@ internal fun <T> selectAudioStream(
     val validStreams = streams.filter { it.bitrate > 0 }.ifEmpty { streams }
     if (validStreams.isEmpty()) return null
 
-    val useLowestBitrate = quality == AudioQuality.LOW
-
-    return if (useLowestBitrate) {
-        validStreams.minWithOrNull(compareBy<RankedAudioStream<T>> { it.bitrate })?.value
+    // Match InnerTubeX: AUTO uses the low-bandwidth profile on metered networks,
+    // otherwise it prefers WebM/Opus and scores channel count, bitrate and sample rate.
+    val effectiveQuality = if (quality == AudioQuality.AUTO && isMetered) {
+        AudioQuality.LOW
     } else {
-        validStreams.maxWithOrNull(compareBy<RankedAudioStream<T>> { it.bitrate })?.value
+        quality
     }
+
+    return when (effectiveQuality) {
+        AudioQuality.LOW -> {
+            validStreams
+                .filter { it.mimeType?.contains("audio/mp4", ignoreCase = true) == true }
+                .minByOrNull { it.bitrate }
+                ?.value
+                ?: validStreams.minByOrNull { it.bitrate }?.value
+        }
+
+        AudioQuality.AUTO -> {
+            validStreams
+                .filter { it.mimeType?.contains("audio/webm", ignoreCase = true) == true }
+                .maxWithOrNull(compareBy<RankedAudioStream<T>> { audioFormatScore(it) })
+                ?.value
+                ?: validStreams.maxWithOrNull(compareBy { audioFormatScore(it) })?.value
+        }
+
+        AudioQuality.HIGH -> {
+            validStreams.maxWithOrNull(compareBy { audioFormatScore(it) })?.value
+        }
+    }
+}
+
+private fun <T> audioFormatScore(stream: RankedAudioStream<T>): Long {
+    val codecRank = when {
+        stream.mimeType?.contains("audio/webm", ignoreCase = true) == true -> 100L
+        stream.mimeType?.contains("audio/mp4", ignoreCase = true) == true -> 50L
+        else -> 0L
+    }
+    val channelBonus = when (stream.audioChannels) {
+        2 -> 50_000L
+        1 -> 0L
+        else -> 25_000L
+    }
+    val sampleRate = (stream.sampleRate ?: 0).coerceIn(0, 48_000) / 10
+    return codecRank * 1_000_000L + channelBonus + stream.bitrate + sampleRate
 }
 
 internal fun <T> selectVideoStream(

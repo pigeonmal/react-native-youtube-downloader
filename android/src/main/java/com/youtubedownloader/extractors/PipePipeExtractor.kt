@@ -64,6 +64,9 @@ data class PlaybackData(
 data class StreamPlayback(
     val format: StreamFormat,
     val streamUrl: String,
+    val requireBoundedRange: Boolean = false,
+    val useRangeChunks: Boolean = false,
+    val rangeChunkSizeBytes: Long = 0L,
 )
 
 data class StreamFormat(
@@ -121,6 +124,11 @@ private fun StreamPlayback.toWritableMap(): WritableMap {
     val map = Arguments.createMap()
     map.putMap("format", format.toWritableMap())
     map.putString("streamUrl", streamUrl)
+    map.putBoolean("requireBoundedRange", requireBoundedRange)
+    map.putBoolean("useRangeChunks", useRangeChunks)
+    if (rangeChunkSizeBytes > 0L) {
+        map.putDouble("rangeChunkSizeBytes", rangeChunkSizeBytes.toDouble())
+    }
     return map
 }
 
@@ -564,10 +572,10 @@ object PipePipeExtractor {
         ?.takeIf { it.isNotEmpty() }
 
     private fun anonymousClients(generator: PoTokenGenerator?, hasVideo: Boolean): List<String> =
-        listOf("visionos", "tv_downgraded", "web", "mweb", "tv_simply")
+        listOf("visionos", "tv_simply", "tv_downgraded", "web", "mweb", "android_vr")
 
     private fun authenticatedClients(generator: PoTokenGenerator?, hasVideo: Boolean): List<String> =
-        listOf("visionos", "tv_downgraded", "web", "mweb", "tv_simply")
+        listOf("visionos", "tv_simply", "tv_downgraded", "web", "mweb", "android_vr")
 
     private const val TAG = "PipePipeExtractor"
 
@@ -607,7 +615,13 @@ object PipePipeExtractor {
 
                 val audioStream = selectAudioStream(
                     audioStreams.map { stream ->
-                        RankedAudioStream(stream, stream.getBitrateOrAverage())
+                        RankedAudioStream(
+                            value = stream,
+                            bitrate = stream.getBitrateOrAverage(),
+                            mimeType = stream.format?.mimeType,
+                            audioChannels = stream.itagItem?.audioChannels?.takeIf { it > 0 },
+                            sampleRate = stream.itagItem?.sampleRate?.takeIf { it > 0 },
+                        )
                     },
                     audioQuality,
                     isMetered,
@@ -754,9 +768,23 @@ object PipePipeExtractor {
                 )
             },
             streamExpiresInSeconds = expiresInSeconds(audioStream.content),
-            audioStream = StreamPlayback(audioStream.toStreamFormat(), audioStream.content),
-            videoStream = videoStream?.let { StreamPlayback(it.toStreamFormat(), it.content) },
-            clientName = clientName.uppercase(Locale.ROOT),
+            audioStream = StreamPlayback(
+                format = audioStream.toStreamFormat(),
+                streamUrl = audioStream.content,
+                requireBoundedRange = clientName.requiresBoundedMediaRange(),
+                useRangeChunks = clientName.usesChunkedMediaRanges(),
+                rangeChunkSizeBytes = clientName.mediaRangeChunkSize(),
+            ),
+            videoStream = videoStream?.let {
+                StreamPlayback(
+                    format = it.toStreamFormat(),
+                    streamUrl = it.content,
+                    requireBoundedRange = clientName.requiresBoundedMediaRange(),
+                    useRangeChunks = clientName.usesChunkedMediaRanges(),
+                    rangeChunkSizeBytes = clientName.mediaRangeChunkSize(),
+                )
+            },
+            clientName = clientName.toPublicClientName(),
             extractionDurationMs = extractionDurationMs,
             poTokenDurationMs = poTokenDurationMs,
         )
@@ -773,6 +801,29 @@ object PipePipeExtractor {
             .coerceAtLeast(0L)
             .coerceAtMost(Int.MAX_VALUE.toLong())
             .toInt()
+    }
+
+    private fun String.toPublicClientName(): String = when (lowercase(Locale.ROOT)) {
+        "android_vr" -> "ANDROID_VR"
+        "tv_simply" -> "TVHTML5_SIMPLY"
+        "tv_downgraded" -> "TVHTML5_DOWNGRADED"
+        else -> uppercase(Locale.ROOT)
+    }
+
+    private fun String.requiresBoundedMediaRange(): Boolean = when (lowercase(Locale.ROOT)) {
+        "android_vr", "tv_simply" -> true
+        else -> false
+    }
+
+    private fun String.usesChunkedMediaRanges(): Boolean = when (lowercase(Locale.ROOT)) {
+        "android_vr", "tv_simply" -> true
+        else -> false
+    }
+
+    private fun String.mediaRangeChunkSize(): Long = if (usesChunkedMediaRanges()) {
+        512L * 1_024L
+    } else {
+        1_024L * 1_024L
     }
 
     private fun AudioStream.getBitrateOrAverage(): Int =
