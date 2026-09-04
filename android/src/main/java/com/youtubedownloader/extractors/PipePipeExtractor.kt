@@ -387,9 +387,9 @@ object PipePipeExtractor {
                 // return a usable stream for a particular video.
                 val authenticatedClients = if (hasSupportedAuthCookie(cookie)) {
                     if (generator != null) {
-                        listOf("mweb", "tv_downgraded", "visionos", "web", "tv_simply")
+                        listOf("mweb", "visionos", "tv_downgraded", "web", "tv_simply")
                     } else {
-                        listOf("tv_downgraded", "visionos", "web", "tv_simply")
+                        listOf("visionos", "tv_downgraded", "web", "tv_simply")
                     }
                 } else {
                     if (generator != null) {
@@ -542,6 +542,7 @@ object PipePipeExtractor {
         var lastError: Throwable? = null
         var botChallengeError: Throwable? = null
         for (client in clients) {
+            val startedAtNanos = System.nanoTime()
             try {
                 NewPipe.setYoutubePlayerClient(client)
                 val extractor = ServiceList.YouTube.getStreamExtractor(
@@ -552,6 +553,7 @@ object PipePipeExtractor {
                 val audioStreams = extractor.getAudioStreams()
                     .filter { it.isUrl && it.content.isNotBlank() }
                 if (audioStreams.isEmpty()) {
+                    debugLog("YouTube $client returned no audio streams in ${elapsedMillis(startedAtNanos)}ms")
                     continue
                 }
 
@@ -587,10 +589,15 @@ object PipePipeExtractor {
                     audioStream,
                     videoStream,
                     client,
-                )
+                ).also {
+                    debugLog("YouTube $client extraction succeeded in ${elapsedMillis(startedAtNanos)}ms")
+                }
             } catch (t: Throwable) {
                 lastError = t
-                debugLog("YouTube $client extraction failed: ${t::class.simpleName ?: "unknown"}")
+                debugLog(
+                    "YouTube $client extraction failed in ${elapsedMillis(startedAtNanos)}ms: " +
+                        (t::class.simpleName ?: "unknown")
+                )
                 if (isYoutubeBotChallenge(t)) {
                     botChallengeError = t
                 }
@@ -605,6 +612,9 @@ object PipePipeExtractor {
         }
         throw failure
     }
+
+    private fun elapsedMillis(startedAtNanos: Long): Long =
+        (System.nanoTime() - startedAtNanos) / 1_000_000L
 
     internal fun isYoutubeBotChallenge(error: Throwable): Boolean {
         var current: Throwable? = error
