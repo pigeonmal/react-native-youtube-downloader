@@ -810,15 +810,11 @@ object PipePipeExtractor {
         else -> uppercase(Locale.ROOT)
     }
 
-    private fun String.requiresBoundedMediaRange(): Boolean = when (lowercase(Locale.ROOT)) {
-        "android_vr", "tv_simply" -> true
-        else -> false
-    }
+    // YouTube playback is always served through bounded range reads. The
+    // client-specific chunk size below mirrors Metrolist's transport policy.
+    private fun String.requiresBoundedMediaRange(): Boolean = true
 
-    private fun String.usesChunkedMediaRanges(): Boolean = when (lowercase(Locale.ROOT)) {
-        "android_vr", "tv_simply" -> true
-        else -> false
-    }
+    private fun String.usesChunkedMediaRanges(): Boolean = true
 
     private fun String.mediaRangeChunkSize(): Long = if (usesChunkedMediaRanges()) {
         512L * 1_024L

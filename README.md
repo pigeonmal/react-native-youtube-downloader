@@ -15,8 +15,8 @@ YouTube extraction is provided by the maintained
 * Extract YouTube video and audio stream URLs.
 * Supports configurable **audio** and **video** quality.
 * Returns rich metadata (bitrate, MIME type, quality label, etc.).
-* Uses InnerTubeX-style audio format scoring for AUTO quality and client-aware
-  bounded range metadata for playback.
+* Uses InnerTubeX-style audio format scoring for AUTO quality and bounded range
+  metadata for playback on every YouTube client.
 * Built on **React Native TurboModule** for high performance.
 * Fully typed with **TypeScript**.
 
