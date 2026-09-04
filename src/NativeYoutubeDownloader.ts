@@ -71,6 +71,8 @@ export interface ExtractStreamProps {
   videoQuality?: number;
   cookie?: string;
   forceVisitorData?: string;
+  /** When true, never attempt anonymous YouTube clients. */
+  authenticatedOnly?: boolean;
 }
 
 export interface Spec extends TurboModule {

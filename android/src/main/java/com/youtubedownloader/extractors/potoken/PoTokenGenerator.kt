@@ -9,6 +9,7 @@ import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.services.youtube.InnertubeClientRequestInfo
 import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
 import org.schabi.newpipe.extractor.services.youtube.YoutubePoTokenResult
+import java.util.HashMap
 
 /** Owns one short-lived BotGuard WebView and mints visitor-bound player PoTokens. */
 internal class PoTokenGenerator(context: Context) {
@@ -33,7 +34,7 @@ internal class PoTokenGenerator(context: Context) {
             warmUpKey = requestedKey
             try {
                 val visitorData = resolveVisitorData(cookie, preferredVisitorData)
-                ensureWebViewLocked(visitorData, cookie.orEmpty())
+                ensureWebViewLocked(visitorData, cookie)
                 TokenLog.tag(TAG).d("BotGuard warmed up")
             } catch (error: Throwable) {
                 TokenLog.tag(TAG).w(
@@ -58,7 +59,7 @@ internal class PoTokenGenerator(context: Context) {
 
         val visitorData = resolveVisitorData(cookie, preferredVisitorData)
         TokenLog.tag(TAG).d("Visitor data ready")
-        ensureWebViewLocked(visitorData, cookie.orEmpty())
+        ensureWebViewLocked(visitorData, cookie)
 
         val active = webView ?: throw PoTokenException("PoToken WebView was not created")
         try {
@@ -83,13 +84,22 @@ internal class PoTokenGenerator(context: Context) {
     private fun getVisitorData(cookie: String?): String {
         val requestInfo = InnertubeClientRequestInfo.ofWebClient()
         requestInfo.clientInfo.clientVersion = YoutubeParsingHelper.getClientVersion()
+        val headers = HashMap(YoutubeParsingHelper.getYouTubeHeaders())
+        if (!cookie.isNullOrBlank()) {
+            headers["Cookie"] = listOf(cookie)
+            headers["Authorization"] = listOf(
+                YoutubeParsingHelper.getAuthorizationHeader(cookie),
+            )
+            headers["X-Origin"] = listOf("https://www.youtube.com")
+            headers["DNT"] = listOf("1")
+        }
         return YoutubeParsingHelper.getVisitorDataFromInnertube(
             requestInfo,
             NewPipe.getPreferredLocalization(),
             NewPipe.getPreferredContentCountry(),
-            YoutubeParsingHelper.getYouTubeHeaders(),
+            headers,
             YoutubeParsingHelper.YOUTUBEI_V1_URL,
-            cookie,
+            null,
             false,
         )
     }
@@ -112,13 +122,15 @@ internal class PoTokenGenerator(context: Context) {
         }
     }
 
-    private fun ensureWebViewLocked(visitorData: String, cookieKey: String) {
+    private fun ensureWebViewLocked(visitorData: String, cookie: String?) {
+        val cookieKey = cookie.orEmpty()
         val current = webView
         if (current != null && !current.isExpired && !current.isDead &&
             sessionVisitorData == visitorData && sessionCookieKey == cookieKey
         ) return
 
         TokenLog.tag(TAG).d("Creating BotGuard WebView")
+        syncYoutubeCookies(cookie)
         closeLocked()
         val created = runBlocking(Dispatchers.IO) {
             PoTokenWebView.getNewPoTokenGenerator(applicationContext)
@@ -151,6 +163,27 @@ internal class PoTokenGenerator(context: Context) {
         webView = null
         sessionVisitorData = null
         sessionCookieKey = null
+    }
+
+    private fun syncYoutubeCookies(cookie: String?) {
+        val activeCookie = cookie?.trim().orEmpty()
+        if (activeCookie.isEmpty()) return
+        runCatching {
+            val cookieManager = CookieManager.getInstance()
+            activeCookie.split(';')
+                .asSequence()
+                .map(String::trim)
+                .filter { it.substringBefore('=', "").isNotEmpty() && it.substringAfter('=', "").isNotEmpty() }
+                .forEach { pair ->
+                    cookieManager.setCookie(
+                        "https://www.youtube.com",
+                        "$pair; Path=/; Secure",
+                    )
+                }
+            cookieManager.flush()
+        }.onFailure {
+            TokenLog.tag(TAG).w("Unable to synchronize YouTube cookies with PoToken WebView")
+        }
     }
 
     private companion object {

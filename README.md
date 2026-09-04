@@ -75,6 +75,7 @@ Extracts the playback data for a YouTube video.
 | `videoQuality`     | `number`                    | ❌        | Desired video resolution (e.g., 720, 1080) |
 | `cookie`           | `string`                    | ❌        | Optional authentication cookie             |
 | `forceVisitorData` | `string`                    | ❌        | Optional YouTube visitor data override     |
+| `authenticatedOnly` | `boolean`                  | ❌        | Require the authenticated request path and never try anonymous clients |
 
 #### Returns
 

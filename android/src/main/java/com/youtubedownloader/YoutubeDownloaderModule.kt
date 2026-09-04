@@ -62,7 +62,8 @@ class YoutubeDownloaderModule(reactContext: ReactApplicationContext) :
                   videoQuality = videoQuality,
                   isMetered = connectivityManager.isActiveNetworkMetered,
                   cookie = if (options.hasKey("cookie")) options.getString("cookie") else null,
-                  forceVisitorData = if (options.hasKey("forceVisitorData")) options.getString("forceVisitorData") else null
+                  forceVisitorData = if (options.hasKey("forceVisitorData")) options.getString("forceVisitorData") else null,
+                  authenticatedOnly = options.hasKey("authenticatedOnly") && options.getBoolean("authenticatedOnly")
               )
 
               promise.resolve(playbackData.toWritableMap())

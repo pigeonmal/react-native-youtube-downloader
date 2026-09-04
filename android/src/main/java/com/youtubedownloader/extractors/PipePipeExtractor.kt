@@ -41,6 +41,7 @@ private data class PlaybackCacheKey(
     val isMetered: Boolean,
     val cookieFingerprint: String,
     val visitorDataFingerprint: String,
+    val authenticatedOnly: Boolean,
 )
 
 private data class CachedPlayback(
@@ -328,6 +329,7 @@ object PipePipeExtractor {
         isMetered: Boolean,
         cookie: String?,
         forceVisitorData: String?,
+        authenticatedOnly: Boolean = false,
     ): PlaybackData {
         val normalizedVideoId = videoId.trim()
         require(VIDEO_ID_PATTERN.matches(normalizedVideoId)) {
@@ -343,17 +345,21 @@ object PipePipeExtractor {
                 isMetered = isMetered,
                 cookieFingerprint = fingerprint(cookie),
                 visitorDataFingerprint = fingerprint(forceVisitorData),
+                authenticatedOnly = authenticatedOnly,
             )
             getCachedPlayback(cacheKey)?.let { return it }
 
             val hasCookie = !cookie.isNullOrBlank()
+            require(!authenticatedOnly || hasCookie) {
+                "Authenticated YouTube extraction requires a cookie"
+            }
             val generator = poTokenGenerator
             try {
                 // These are the clients supported by the bundled
                 // PipePipe/NewPipe extractor. The final two provide additional
                 // video-capable fallbacks when the primary clients cannot
                 // return a usable stream for a particular video.
-                val authenticatedClients = if (hasSapidCookie(cookie)) {
+                val authenticatedClients = if (hasSupportedAuthCookie(cookie)) {
                     if (generator != null) {
                         listOf("mweb", "tv_downgraded", "visionos", "web", "tv_simply")
                     } else {
@@ -371,7 +377,20 @@ object PipePipeExtractor {
                 // a native player client. Public videos should therefore use the
                 // same anonymous context as a guest first. Auth remains available
                 // as a second attempt for age-restricted or account-only videos.
-                val playbackData = if (hasCookie) {
+                val playbackData = if (authenticatedOnly) {
+                    configureExtractionContext(cookie, forceVisitorData, generator)
+                    debugLog("Authenticated YouTube extraction started for $normalizedVideoId")
+                    extractWithClients(
+                        videoId = normalizedVideoId,
+                        playlistId = playlistId,
+                        audioQuality = audioQuality,
+                        videoQuality = videoQuality,
+                        isMetered = isMetered,
+                        clients = authenticatedClients,
+                    ).also {
+                        debugLog("Authenticated YouTube extraction succeeded for $normalizedVideoId")
+                    }
+                } else if (hasCookie) {
                     try {
                         configureExtractionContext(null, null, generator)
                         debugLog("Anonymous YouTube extraction started for $normalizedVideoId")
@@ -429,24 +448,45 @@ object PipePipeExtractor {
         visitorData: String?,
         generator: PoTokenGenerator?,
     ) {
-        downloader.cookie = cookie
+        val normalizedCookie = normalizeCookie(cookie)
+        downloader.cookie = normalizedCookie
         downloader.visitorData = visitorData
         NewPipe.setYoutubePoTokenResolver(
             generator?.let { activeGenerator ->
                 java.util.function.Function { id ->
-                    activeGenerator.getBlocking(id, cookie, visitorData)
+                    activeGenerator.getBlocking(id, normalizedCookie, visitorData)
                 }
             },
         )
-        ServiceList.YouTube.tokens = if (hasSapidCookie(cookie)) cookie else null
+        ServiceList.YouTube.tokens = normalizedCookie
+            ?.takeIf { hasSupportedAuthCookie(it) }
     }
 
-    private fun hasSapidCookie(cookie: String?): Boolean = cookie
+    internal fun hasSupportedAuthCookie(cookie: String?): Boolean =
+        normalizeCookie(cookie)
+            ?.split(';')
+            ?.asSequence()
+            ?.mapNotNull { pair ->
+                val trimmed = pair.trim()
+                val name = trimmed.substringBefore('=', "")
+                val value = trimmed.substringAfter('=', "")
+                name.takeIf {
+                    value.isNotEmpty() &&
+                        (it == "SAPISID" || it == "__Secure-3PAPISID")
+                }
+            }
+            ?.any() == true
+
+    private fun normalizeCookie(cookie: String?): String? = cookie
         ?.split(';')
         ?.asSequence()
-        ?.map(String::trim)
-        ?.any { it.startsWith("SAPISID=") }
-        ?: false
+        ?.mapNotNull { pair ->
+            val trimmed = pair.trim()
+            val separator = trimmed.indexOf('=')
+            if (separator <= 0) null else trimmed
+        }
+        ?.joinToString("; ")
+        ?.takeIf { it.isNotEmpty() }
 
     private fun anonymousClients(generator: PoTokenGenerator?): List<String> =
         if (generator != null) {
@@ -522,6 +562,7 @@ object PipePipeExtractor {
                 )
             } catch (t: Throwable) {
                 lastError = t
+                debugLog("YouTube $client extraction failed: ${t::class.simpleName ?: "unknown"}")
                 if (isYoutubeBotChallenge(t)) {
                     botChallengeError = t
                 }
