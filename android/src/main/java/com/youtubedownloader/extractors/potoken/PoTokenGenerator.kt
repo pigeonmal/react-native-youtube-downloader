@@ -18,9 +18,14 @@ internal class PoTokenGenerator(context: Context) {
         PREFERENCES_NAME,
         Context.MODE_PRIVATE,
     )
-    private var webView: PoTokenWebView? = null
-    private var sessionVisitorData: String? = null
-    private var sessionCookieKey: String? = null
+    private data class Session(
+        val webView: PoTokenWebView,
+        val visitorData: String,
+        val cookieKey: String,
+    )
+
+    private var anonymousSession: Session? = null
+    private var authSession: Session? = null
     private var warmUpKey: String? = null
 
     /** Prepares BotGuard on the caller's background thread without minting a video token. */
@@ -45,6 +50,12 @@ internal class PoTokenGenerator(context: Context) {
         }
     }
 
+    fun generatePoToken(
+        videoId: String,
+        cookie: String? = null,
+        preferredVisitorData: String? = null,
+    ): String = getBlocking(videoId, cookie, preferredVisitorData).playerPoToken
+
     fun getBlocking(
         videoId: String,
         cookie: String?,
@@ -58,12 +69,11 @@ internal class PoTokenGenerator(context: Context) {
 
         val visitorData = resolveVisitorData(cookie, preferredVisitorData)
         TokenLog.tag(TAG).d("Visitor data ready")
-        ensureWebViewLocked(visitorData, cookie)
+        val session = ensureWebViewLocked(visitorData, cookie)
 
-        val active = webView ?: throw PoTokenException("PoToken WebView was not created")
         try {
             val playerPoToken = runBlocking(Dispatchers.IO) {
-                active.generatePoToken(videoId)
+                session.webView.generatePoToken(videoId)
             }
             TokenLog.tag(TAG).d("Player PoToken ready")
             YoutubePoTokenResult(
@@ -72,13 +82,16 @@ internal class PoTokenGenerator(context: Context) {
                 playerPoToken,
             )
         } catch (error: Throwable) {
-            closeLocked()
+            closeSessionLocked(cookie.orEmpty().isNotEmpty())
             TokenLog.tag(TAG).e("Player PoToken failed: ${error::class.simpleName ?: "unknown"}")
             throw error
         }
     }
 
-    fun close() = synchronized(lock) { closeLocked() }
+    fun close() = synchronized(lock) {
+        closeSessionLocked(isAuth = false)
+        closeSessionLocked(isAuth = true)
+    }
 
     private fun getVisitorData(cookie: String?): String {
         val requestInfo = InnertubeClientRequestInfo.ofWebClient()
@@ -99,39 +112,42 @@ internal class PoTokenGenerator(context: Context) {
         if (preferred != null) return preferred
 
         val cookieKey = cookie.orEmpty()
-        val cachedVisitorData = sessionVisitorData?.takeIf { sessionCookieKey == cookieKey }
-            ?: cookieKey.takeIf { it.isEmpty() }?.let {
-                preferences.getString(VISITOR_DATA_KEY, null)
-            }
+        val isAuth = cookieKey.isNotEmpty()
+        val currentSession = if (isAuth) authSession else anonymousSession
+        val cachedVisitorData = currentSession?.visitorData?.takeIf { currentSession.cookieKey == cookieKey }
+            ?: (!isAuth).takeIf { it }?.let { preferences.getString(VISITOR_DATA_KEY, null) }
         return cachedVisitorData ?: getVisitorData(cookie).also {
-            sessionVisitorData = it
-            sessionCookieKey = cookieKey
-            if (cookieKey.isEmpty()) {
+            if (!isAuth) {
                 preferences.edit().putString(VISITOR_DATA_KEY, it).apply()
             }
         }
     }
 
-    private fun ensureWebViewLocked(visitorData: String, cookie: String?) {
+    private fun ensureWebViewLocked(visitorData: String, cookie: String?): Session {
         val cookieKey = cookie.orEmpty()
-        val current = webView
-        if (current != null && !current.isExpired && !current.isDead &&
-            sessionVisitorData == visitorData && sessionCookieKey == cookieKey
-        ) return
+        val isAuth = cookieKey.isNotEmpty()
+        val current = if (isAuth) authSession else anonymousSession
+        if (current != null && !current.webView.isExpired && !current.webView.isDead &&
+            current.visitorData == visitorData && current.cookieKey == cookieKey
+        ) return current
 
-        TokenLog.tag(TAG).d("Creating BotGuard WebView")
+        TokenLog.tag(TAG).d("Creating BotGuard WebView (auth=$isAuth)")
         syncYoutubeCookies(cookie)
-        closeLocked()
+        closeSessionLocked(isAuth)
         val created = runBlocking(Dispatchers.IO) {
             PoTokenWebView.getNewPoTokenGenerator(applicationContext)
         }
         try {
             // YouTube expects one visitor-bound token before video-bound tokens are minted.
             runBlocking(Dispatchers.IO) { created.generatePoToken(visitorData) }
-            webView = created
-            sessionVisitorData = visitorData
-            sessionCookieKey = cookieKey
-            TokenLog.tag(TAG).d("BotGuard WebView ready")
+            val newSession = Session(created, visitorData, cookieKey)
+            if (isAuth) {
+                authSession = newSession
+            } else {
+                anonymousSession = newSession
+            }
+            TokenLog.tag(TAG).d("BotGuard WebView ready (auth=$isAuth)")
+            return newSession
         } catch (error: Throwable) {
             created.close()
             TokenLog.tag(TAG).e("BotGuard WebView setup failed: ${error::class.simpleName ?: "unknown"}")
@@ -140,19 +156,22 @@ internal class PoTokenGenerator(context: Context) {
     }
 
     private fun isReadyLocked(visitorData: String, cookieKey: String): Boolean {
-        val current = webView
-        return current != null && !current.isExpired && !current.isDead &&
-            sessionVisitorData == visitorData && sessionCookieKey == cookieKey
+        val current = if (cookieKey.isNotEmpty()) authSession else anonymousSession
+        return current != null && !current.webView.isExpired && !current.webView.isDead &&
+            current.visitorData == visitorData && current.cookieKey == cookieKey
     }
 
     private fun contextKey(cookie: String?, preferredVisitorData: String?): String =
         cookie.orEmpty() + "\u0000" + preferredVisitorData.orEmpty()
 
-    private fun closeLocked() {
-        webView?.close()
-        webView = null
-        sessionVisitorData = null
-        sessionCookieKey = null
+    private fun closeSessionLocked(isAuth: Boolean) {
+        if (isAuth) {
+            authSession?.webView?.close()
+            authSession = null
+        } else {
+            anonymousSession?.webView?.close()
+            anonymousSession = null
+        }
     }
 
     private fun syncYoutubeCookies(cookie: String?) {

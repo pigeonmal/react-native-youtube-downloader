@@ -57,6 +57,8 @@ data class PlaybackData(
     val audioStream: StreamPlayback,
     val videoStream: StreamPlayback?,
     val clientName: String,
+    val extractionDurationMs: Double? = null,
+    val poTokenDurationMs: Double? = null,
 )
 
 data class StreamPlayback(
@@ -110,6 +112,8 @@ fun PlaybackData.toWritableMap(): WritableMap {
     audioConfig?.let { map.putMap("audioConfig", it.toWritableMap()) }
     videoDetails?.let { map.putMap("videoDetails", it.toWritableMap()) }
     playbackTracking?.let { map.putMap("playbackTracking", it.toWritableMap()) }
+    extractionDurationMs?.let { map.putDouble("extractionDurationMs", it) }
+    poTokenDurationMs?.let { map.putDouble("poTokenDurationMs", it) }
     return map
 }
 
@@ -171,9 +175,10 @@ private fun trackingUrlMap(url: String): WritableMap = Arguments.createMap().app
 
 private class PipePipeDownloader : Downloader() {
     private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
+        .connectionPool(okhttp3.ConnectionPool(10, 5, TimeUnit.MINUTES))
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
 
@@ -184,7 +189,7 @@ private class PipePipeDownloader : Downloader() {
     var visitorData: String? = null
 
     override fun execute(request: ExtractorRequest): ExtractorResponse {
-        visitorBootstrapResponse(request.url())?.let { return it }
+        fastInterceptResponse(request.url())?.let { return it }
         client.newCall(buildRequest(request)).execute().use { response ->
             return response.toExtractorResponse()
         }
@@ -194,6 +199,17 @@ private class PipePipeDownloader : Downloader() {
         request: ExtractorRequest,
         callback: Downloader.AsyncCallback,
     ): CancellableCall {
+        fastInterceptResponse(request.url())?.let { intercepted ->
+            val directCall = CancellableCall(null)
+            try {
+                callback.onSuccess(intercepted)
+            } catch (e: Exception) {
+                callback.onError(e)
+            } finally {
+                directCall.setFinished()
+            }
+            return directCall
+        }
         val call = client.newCall(buildRequest(request))
         val cancellableCall = CancellableCall(call)
         call.enqueue(object : Callback {
@@ -216,6 +232,23 @@ private class PipePipeDownloader : Downloader() {
             }
         })
         return cancellableCall
+    }
+
+    private fun fastInterceptResponse(url: String): ExtractorResponse? {
+        // Intercept /youtubei/v1/next: NewPipe's onFetchPage() queries watch-next
+        // (related videos, comments) which wastes 1.3-1.6s of network latency.
+        // Returning an empty JSON object immediately satisfies NewPipe's null check.
+        if (url.contains("/youtubei/v1/next")) {
+            return ExtractorResponse(
+                200,
+                "OK",
+                emptyMap(),
+                """{"responseContext":{"serviceTrackingParams":[]},"contents":{"twoColumnWatchNextResults":{}}}""",
+                null,
+                url,
+            )
+        }
+        return visitorBootstrapResponse(url)
     }
 
     private fun visitorBootstrapResponse(url: String): ExtractorResponse? {
@@ -326,6 +359,9 @@ object PipePipeExtractor {
 
     init {
         NewPipe.init(downloader)
+        runCatching {
+            ServiceList.YouTube.setFetchDislike(false)
+        }
     }
 
     fun configure(context: Context) {
@@ -341,10 +377,21 @@ object PipePipeExtractor {
     fun warmUp() {
         val generator = poTokenGenerator ?: return
         warmUpScope.launch {
-            synchronized(extractionLock) {
-                generator.warmUp()
+            generator.warmUp()
+            runCatching {
+                org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper.getClientVersion()
             }
         }
+    }
+
+    fun generatePoToken(
+        videoId: String,
+        cookie: String? = null,
+        preferredVisitorData: String? = null,
+    ): String {
+        val generator = poTokenGenerator
+            ?: throw IllegalStateException("PoTokenGenerator is not configured")
+        return generator.generatePoToken(videoId, cookie, preferredVisitorData)
     }
 
     fun extract(
@@ -357,6 +404,7 @@ object PipePipeExtractor {
         forceVisitorData: String?,
         authenticatedOnly: Boolean = false,
     ): PlaybackData {
+        val totalExtractionStartNanos = System.nanoTime()
         val normalizedVideoId = videoId.trim()
         require(VIDEO_ID_PATTERN.matches(normalizedVideoId)) {
             "Invalid YouTube video ID"
@@ -380,31 +428,17 @@ object PipePipeExtractor {
                 "Authenticated YouTube extraction requires a cookie"
             }
             val generator = poTokenGenerator
+            val poTokenDurationHolder = LongArray(1)
+            val hasVideo = videoQuality != null
+            val authClients = authenticatedClients(generator, hasVideo)
+            val anonClients = anonymousClients(generator, hasVideo)
             try {
-                // These are the clients supported by the bundled
-                // PipePipe/NewPipe extractor. The final two provide additional
-                // video-capable fallbacks when the primary clients cannot
-                // return a usable stream for a particular video.
-                val authenticatedClients = if (hasSupportedAuthCookie(cookie)) {
-                    if (generator != null) {
-                        listOf("mweb", "visionos", "tv_downgraded", "web", "tv_simply")
-                    } else {
-                        listOf("visionos", "tv_downgraded", "web", "tv_simply")
-                    }
-                } else {
-                    if (generator != null) {
-                        listOf("mweb", "visionos", "tv_downgraded", "web", "tv_simply")
-                    } else {
-                        listOf("visionos", "tv_downgraded", "web", "tv_simply")
-                    }
-                }
-
                 // YouTube may reject a valid WebView session when it is reused by
                 // a native player client. Public videos should therefore use the
                 // same anonymous context as a guest first. Auth remains available
                 // as a second attempt for age-restricted or account-only videos.
                 val playbackData = if (authenticatedOnly) {
-                    configureExtractionContext(cookie, forceVisitorData, generator)
+                    configureExtractionContext(cookie, forceVisitorData, generator, poTokenDurationHolder)
                     debugLog("Authenticated YouTube extraction started for $normalizedVideoId")
                     extractWithClients(
                         videoId = normalizedVideoId,
@@ -412,13 +446,15 @@ object PipePipeExtractor {
                         audioQuality = audioQuality,
                         videoQuality = videoQuality,
                         isMetered = isMetered,
-                        clients = authenticatedClients,
+                        clients = authClients,
+                        totalExtractionStartNanos = totalExtractionStartNanos,
+                        poTokenDurationHolder = poTokenDurationHolder,
                     ).also {
                         debugLog("Authenticated YouTube extraction succeeded for $normalizedVideoId")
                     }
                 } else if (hasCookie) {
                     try {
-                        configureExtractionContext(null, null, generator)
+                        configureExtractionContext(null, null, generator, poTokenDurationHolder)
                         debugLog("Anonymous YouTube extraction started for $normalizedVideoId")
                         extractWithClients(
                             videoId = normalizedVideoId,
@@ -426,21 +462,25 @@ object PipePipeExtractor {
                             audioQuality = audioQuality,
                             videoQuality = videoQuality,
                             isMetered = isMetered,
-                            clients = anonymousClients(generator),
+                            clients = anonClients,
+                            totalExtractionStartNanos = totalExtractionStartNanos,
+                            poTokenDurationHolder = poTokenDurationHolder,
                         ).also {
                             debugLog("Anonymous YouTube extraction succeeded for $normalizedVideoId")
                         }
                     } catch (anonymousError: Throwable) {
                         debugLog("Anonymous extraction unavailable; trying authenticated YouTube extraction for $normalizedVideoId")
                         try {
-                            configureExtractionContext(cookie, forceVisitorData, generator)
+                            configureExtractionContext(cookie, forceVisitorData, generator, poTokenDurationHolder)
                             extractWithClients(
                                 videoId = normalizedVideoId,
                                 playlistId = playlistId,
                                 audioQuality = audioQuality,
                                 videoQuality = videoQuality,
                                 isMetered = isMetered,
-                                clients = authenticatedClients,
+                                clients = authClients,
+                                totalExtractionStartNanos = totalExtractionStartNanos,
+                                poTokenDurationHolder = poTokenDurationHolder,
                             )
                         } catch (authenticatedError: Throwable) {
                             authenticatedError.addSuppressed(anonymousError)
@@ -448,14 +488,16 @@ object PipePipeExtractor {
                         }
                     }
                 } else {
-                    configureExtractionContext(null, null, generator)
+                    configureExtractionContext(null, null, generator, poTokenDurationHolder)
                     extractWithClients(
                         videoId = normalizedVideoId,
                         playlistId = playlistId,
                         audioQuality = audioQuality,
                         videoQuality = videoQuality,
                         isMetered = isMetered,
-                        clients = anonymousClients(generator),
+                        clients = anonClients,
+                        totalExtractionStartNanos = totalExtractionStartNanos,
+                        poTokenDurationHolder = poTokenDurationHolder,
                     )
                 }
                 cachePlayback(cacheKey, playbackData)
@@ -473,6 +515,7 @@ object PipePipeExtractor {
         cookie: String?,
         visitorData: String?,
         generator: PoTokenGenerator?,
+        poTokenDurationHolder: LongArray? = null,
     ) {
         val normalizedCookie = normalizeCookie(cookie)
         downloader.cookie = normalizedCookie
@@ -480,7 +523,11 @@ object PipePipeExtractor {
         NewPipe.setYoutubePoTokenResolver(
             generator?.let { activeGenerator ->
                 java.util.function.Function { id ->
+                    val poStart = System.nanoTime()
                     activeGenerator.getBlocking(id, normalizedCookie, visitorData).also {
+                        if (poTokenDurationHolder != null && poTokenDurationHolder.isNotEmpty()) {
+                            poTokenDurationHolder[0] = System.nanoTime() - poStart
+                        }
                         downloader.visitorData = it.visitorData
                     }
                 }
@@ -516,12 +563,11 @@ object PipePipeExtractor {
         ?.joinToString("; ")
         ?.takeIf { it.isNotEmpty() }
 
-    private fun anonymousClients(generator: PoTokenGenerator?): List<String> =
-        if (generator != null) {
-            listOf("mweb", "visionos", "tv_downgraded", "web", "tv_simply")
-        } else {
-            listOf("visionos", "tv_downgraded", "web", "tv_simply")
-        }
+    private fun anonymousClients(generator: PoTokenGenerator?, hasVideo: Boolean): List<String> =
+        listOf("visionos", "tv_downgraded", "web", "mweb", "tv_simply")
+
+    private fun authenticatedClients(generator: PoTokenGenerator?, hasVideo: Boolean): List<String> =
+        listOf("visionos", "tv_downgraded", "web", "mweb", "tv_simply")
 
     private const val TAG = "PipePipeExtractor"
 
@@ -538,6 +584,8 @@ object PipePipeExtractor {
         videoQuality: VideoQuality?,
         isMetered: Boolean,
         clients: List<String>,
+        totalExtractionStartNanos: Long = System.nanoTime(),
+        poTokenDurationHolder: LongArray? = null,
     ): PlaybackData {
         var lastError: Throwable? = null
         var botChallengeError: Throwable? = null
@@ -584,13 +632,22 @@ object PipePipeExtractor {
                         )
                 }
 
+                val extractionDurationMs = (System.nanoTime() - totalExtractionStartNanos) / 1_000_000.0
+                val poTokenDurationMs = if (poTokenDurationHolder != null && poTokenDurationHolder.isNotEmpty() && poTokenDurationHolder[0] > 0) {
+                    poTokenDurationHolder[0] / 1_000_000.0
+                } else {
+                    null
+                }
+
                 return createPlaybackData(
                     extractor,
                     audioStream,
                     videoStream,
                     client,
+                    extractionDurationMs,
+                    poTokenDurationMs,
                 ).also {
-                    debugLog("YouTube $client extraction succeeded in ${elapsedMillis(startedAtNanos)}ms")
+                    debugLog("YouTube $client extraction succeeded in ${elapsedMillis(startedAtNanos)}ms (total: ${extractionDurationMs}ms)")
                 }
             } catch (t: Throwable) {
                 lastError = t
@@ -663,6 +720,8 @@ object PipePipeExtractor {
         audioStream: AudioStream,
         videoStream: VideoStream?,
         clientName: String,
+        extractionDurationMs: Double? = null,
+        poTokenDurationMs: Double? = null,
     ): PlaybackData {
         val response = extractor.playerResponse
         val details = response?.getObject("videoDetails")
@@ -698,6 +757,8 @@ object PipePipeExtractor {
             audioStream = StreamPlayback(audioStream.toStreamFormat(), audioStream.content),
             videoStream = videoStream?.let { StreamPlayback(it.toStreamFormat(), it.content) },
             clientName = clientName.uppercase(Locale.ROOT),
+            extractionDurationMs = extractionDurationMs,
+            poTokenDurationMs = poTokenDurationMs,
         )
     }
 

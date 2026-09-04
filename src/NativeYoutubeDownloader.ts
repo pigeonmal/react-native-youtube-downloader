@@ -8,6 +8,8 @@ export interface PlaybackData {
   audioStream: StreamPlayback;
   videoStream?: StreamPlayback;
   clientName: string;
+  extractionDurationMs?: number;
+  poTokenDurationMs?: number;
 }
 
 export interface StreamPlayback {
@@ -83,6 +85,12 @@ export interface Spec extends TurboModule {
    * @throws Error if stream retrieval fails
    */
   extractYoutubeStream(options: ExtractStreamProps): Promise<PlaybackData>;
+  /**
+   * Generates a YouTube player PoToken for a given video ID
+   * @param videoId Target video ID
+   * @returns Promise resolving to the base64-encoded PoToken string
+   */
+  generatePoToken(videoId: string): Promise<string>;
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>('YoutubeDownloader');

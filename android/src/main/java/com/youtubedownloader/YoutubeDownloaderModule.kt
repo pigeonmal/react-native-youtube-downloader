@@ -73,6 +73,20 @@ class YoutubeDownloaderModule(reactContext: ReactApplicationContext) :
       }
   }
 
+  override fun generatePoToken(
+      videoId: String,
+      promise: Promise
+  ) {
+      scope.launch {
+          try {
+              val token = PipePipeExtractor.generatePoToken(videoId.trim())
+              promise.resolve(token)
+          } catch (e: Exception) {
+              promise.reject("PO_TOKEN_ERROR", e.message, e)
+          }
+      }
+  }
+
   companion object {
     const val NAME = "YoutubeDownloader"
   }
