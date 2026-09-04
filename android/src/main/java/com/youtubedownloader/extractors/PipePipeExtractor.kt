@@ -347,7 +347,13 @@ object PipePipeExtractor {
 
             downloader.cookie = cookie
             downloader.visitorData = forceVisitorData
-            val hasSapidCookie = !cookie.isNullOrBlank() && cookie.contains("SAPISID")
+            val hasCookie = !cookie.isNullOrBlank()
+            val hasSapidCookie = cookie
+                ?.split(';')
+                ?.asSequence()
+                ?.map(String::trim)
+                ?.any { it.startsWith("SAPISID=") }
+                ?: false
             val generator = poTokenGenerator
             NewPipe.setYoutubePoTokenResolver(
                 generator?.let { activeGenerator ->
@@ -376,61 +382,51 @@ object PipePipeExtractor {
                     }
                 }
 
-                var lastError: Throwable? = null
-                for (client in candidateClients) {
-                    try {
-                        NewPipe.setYoutubePlayerClient(client)
-                        val extractor = ServiceList.YouTube.getStreamExtractor(
-                            buildVideoUrl(normalizedVideoId, playlistId)
-                        ) as YoutubeStreamExtractor
-                        extractor.fetchPage()
+                val playbackData = try {
+                    extractWithClients(
+                        videoId = normalizedVideoId,
+                        playlistId = playlistId,
+                        audioQuality = audioQuality,
+                        videoQuality = videoQuality,
+                        isMetered = isMetered,
+                        clients = candidateClients,
+                    )
+                } catch (authenticatedError: Throwable) {
+                    if (!hasCookie || !isYoutubeBotChallenge(authenticatedError)) {
+                        throw authenticatedError
+                    }
 
-                        val audioStreams = extractor.getAudioStreams()
-                            .filter { it.isUrl && it.content.isNotBlank() }
-                        if (audioStreams.isEmpty()) {
-                            continue
-                        }
-
-                        val audioStream = selectAudioStream(
-                            audioStreams.map { stream ->
-                                RankedAudioStream(stream, stream.getBitrateOrAverage())
-                            },
-                            audioQuality,
-                            isMetered,
-                        ) ?: continue
-
-                        val videoStream = videoQuality?.let { requestedQuality ->
-                            val availableVideoStreams = (
-                                extractor.getVideoOnlyStreams().ifEmpty {
-                                    extractor.getVideoStreams()
-                                }
-                            ).filter { it.isUrl && it.content.isNotBlank() }
-                            .map { stream ->
-                                RankedVideoStream(
-                                    stream,
-                                    stream.heightOrZero(),
-                                    stream.getBitrate(),
-                                )
+                    // A valid YouTube Music WebView session can still be rejected by
+                    // one of YouTube's player clients. Public videos remain playable
+                    // anonymously, so retry without auth before giving up. Restricted
+                    // videos still fail with the original authenticated error plus the
+                    // anonymous attempt as a suppressed cause.
+                    downloader.cookie = null
+                    downloader.visitorData = null
+                    ServiceList.YouTube.tokens = null
+                    NewPipe.setYoutubePoTokenResolver(
+                        generator?.let { activeGenerator ->
+                            java.util.function.Function { id ->
+                                activeGenerator.getBlocking(id, null, null)
                             }
-                            selectVideoStream(availableVideoStreams, requestedQuality, isMetered)
-                                ?: throw IllegalStateException(
-                                    "PipePipeExtractor returned no video URL for $requestedQuality"
-                                )
-                        }
-
-                        val playbackData = createPlaybackData(
-                            extractor,
-                            audioStream,
-                            videoStream,
-                            client,
+                        },
+                    )
+                    try {
+                        extractWithClients(
+                            videoId = normalizedVideoId,
+                            playlistId = playlistId,
+                            audioQuality = audioQuality,
+                            videoQuality = videoQuality,
+                            isMetered = isMetered,
+                            clients = anonymousClients(generator),
                         )
-                        cachePlayback(cacheKey, playbackData)
-                        return playbackData
-                    } catch (t: Throwable) {
-                        lastError = t
+                    } catch (anonymousError: Throwable) {
+                        anonymousError.addSuppressed(authenticatedError)
+                        throw anonymousError
                     }
                 }
-                throw lastError ?: IllegalStateException("PipePipeExtractor returned no audio URL")
+                cachePlayback(cacheKey, playbackData)
+                return playbackData
             } finally {
                 downloader.cookie = null
                 downloader.visitorData = null
@@ -438,6 +434,104 @@ object PipePipeExtractor {
                 NewPipe.setYoutubePoTokenResolver(null)
             }
         }
+    }
+
+    private fun anonymousClients(generator: PoTokenGenerator?): List<String> =
+        if (generator != null) {
+            listOf("mweb", "visionos", "tv_downgraded", "web", "tv_simply")
+        } else {
+            listOf("visionos", "tv_downgraded", "web", "tv_simply")
+        }
+
+    private fun extractWithClients(
+        videoId: String,
+        playlistId: String?,
+        audioQuality: AudioQuality,
+        videoQuality: VideoQuality?,
+        isMetered: Boolean,
+        clients: List<String>,
+    ): PlaybackData {
+        var lastError: Throwable? = null
+        var botChallengeError: Throwable? = null
+        for (client in clients) {
+            try {
+                NewPipe.setYoutubePlayerClient(client)
+                val extractor = ServiceList.YouTube.getStreamExtractor(
+                    buildVideoUrl(videoId, playlistId)
+                ) as YoutubeStreamExtractor
+                extractor.fetchPage()
+
+                val audioStreams = extractor.getAudioStreams()
+                    .filter { it.isUrl && it.content.isNotBlank() }
+                if (audioStreams.isEmpty()) {
+                    continue
+                }
+
+                val audioStream = selectAudioStream(
+                    audioStreams.map { stream ->
+                        RankedAudioStream(stream, stream.getBitrateOrAverage())
+                    },
+                    audioQuality,
+                    isMetered,
+                ) ?: continue
+
+                val videoStream = videoQuality?.let { requestedQuality ->
+                    val availableVideoStreams = (
+                        extractor.getVideoOnlyStreams().ifEmpty {
+                            extractor.getVideoStreams()
+                        }
+                    ).filter { it.isUrl && it.content.isNotBlank() }
+                        .map { stream ->
+                            RankedVideoStream(
+                                stream,
+                                stream.heightOrZero(),
+                                stream.getBitrate(),
+                            )
+                        }
+                    selectVideoStream(availableVideoStreams, requestedQuality, isMetered)
+                        ?: throw IllegalStateException(
+                            "PipePipeExtractor returned no video URL for $requestedQuality"
+                        )
+                }
+
+                return createPlaybackData(
+                    extractor,
+                    audioStream,
+                    videoStream,
+                    client,
+                )
+            } catch (t: Throwable) {
+                lastError = t
+                if (isYoutubeBotChallenge(t)) {
+                    botChallengeError = t
+                }
+            }
+        }
+        val failure = lastError ?: IllegalStateException("PipePipeExtractor returned no audio URL")
+        botChallengeError?.let { botError ->
+            if (failure !== botError) {
+                botError.addSuppressed(failure)
+            }
+            throw botError
+        }
+        throw failure
+    }
+
+    internal fun isYoutubeBotChallenge(error: Throwable): Boolean {
+        var current: Throwable? = error
+        while (current != null) {
+            val message = current.message?.lowercase(Locale.ROOT).orEmpty()
+            if (
+                message.contains("sign in to confirm") ||
+                message.contains("confirm you're not a bot") ||
+                message.contains("confirm you’re not a bot") ||
+                message.contains("not a bot")
+            ) {
+                return true
+            }
+            current = current.cause
+        }
+        return false
     }
 
     private fun getCachedPlayback(key: PlaybackCacheKey): PlaybackData? {
