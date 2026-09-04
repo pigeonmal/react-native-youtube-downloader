@@ -1,6 +1,7 @@
 package com.youtubedownloader.extractors
 
 import android.content.Context
+import android.util.Log
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.WritableMap
 import com.grack.nanojson.JsonObject
@@ -345,30 +346,14 @@ object PipePipeExtractor {
             )
             getCachedPlayback(cacheKey)?.let { return it }
 
-            downloader.cookie = cookie
-            downloader.visitorData = forceVisitorData
             val hasCookie = !cookie.isNullOrBlank()
-            val hasSapidCookie = cookie
-                ?.split(';')
-                ?.asSequence()
-                ?.map(String::trim)
-                ?.any { it.startsWith("SAPISID=") }
-                ?: false
             val generator = poTokenGenerator
-            NewPipe.setYoutubePoTokenResolver(
-                generator?.let { activeGenerator ->
-                    java.util.function.Function { id ->
-                        activeGenerator.getBlocking(id, cookie, forceVisitorData)
-                    }
-                },
-            )
-            ServiceList.YouTube.tokens = if (hasSapidCookie) cookie else null
             try {
                 // These are the clients supported by the bundled
                 // PipePipe/NewPipe extractor. The final two provide additional
                 // video-capable fallbacks when the primary clients cannot
                 // return a usable stream for a particular video.
-                val candidateClients = if (hasSapidCookie) {
+                val authenticatedClients = if (hasSapidCookie(cookie)) {
                     if (generator != null) {
                         listOf("mweb", "tv_downgraded", "visionos", "web", "tv_simply")
                     } else {
@@ -382,36 +367,14 @@ object PipePipeExtractor {
                     }
                 }
 
-                val playbackData = try {
-                    extractWithClients(
-                        videoId = normalizedVideoId,
-                        playlistId = playlistId,
-                        audioQuality = audioQuality,
-                        videoQuality = videoQuality,
-                        isMetered = isMetered,
-                        clients = candidateClients,
-                    )
-                } catch (authenticatedError: Throwable) {
-                    if (!hasCookie || !isYoutubeBotChallenge(authenticatedError)) {
-                        throw authenticatedError
-                    }
-
-                    // A valid YouTube Music WebView session can still be rejected by
-                    // one of YouTube's player clients. Public videos remain playable
-                    // anonymously, so retry without auth before giving up. Restricted
-                    // videos still fail with the original authenticated error plus the
-                    // anonymous attempt as a suppressed cause.
-                    downloader.cookie = null
-                    downloader.visitorData = null
-                    ServiceList.YouTube.tokens = null
-                    NewPipe.setYoutubePoTokenResolver(
-                        generator?.let { activeGenerator ->
-                            java.util.function.Function { id ->
-                                activeGenerator.getBlocking(id, null, null)
-                            }
-                        },
-                    )
+                // YouTube may reject a valid WebView session when it is reused by
+                // a native player client. Public videos should therefore use the
+                // same anonymous context as a guest first. Auth remains available
+                // as a second attempt for age-restricted or account-only videos.
+                val playbackData = if (hasCookie) {
                     try {
+                        configureExtractionContext(null, null, generator)
+                        Log.d(TAG, "Anonymous YouTube extraction started for $normalizedVideoId")
                         extractWithClients(
                             videoId = normalizedVideoId,
                             playlistId = playlistId,
@@ -419,11 +382,36 @@ object PipePipeExtractor {
                             videoQuality = videoQuality,
                             isMetered = isMetered,
                             clients = anonymousClients(generator),
-                        )
+                        ).also {
+                            Log.d(TAG, "Anonymous YouTube extraction succeeded for $normalizedVideoId")
+                        }
                     } catch (anonymousError: Throwable) {
-                        anonymousError.addSuppressed(authenticatedError)
-                        throw anonymousError
+                        Log.d(TAG, "Anonymous extraction unavailable; trying authenticated YouTube extraction for $normalizedVideoId")
+                        try {
+                            configureExtractionContext(cookie, forceVisitorData, generator)
+                            extractWithClients(
+                                videoId = normalizedVideoId,
+                                playlistId = playlistId,
+                                audioQuality = audioQuality,
+                                videoQuality = videoQuality,
+                                isMetered = isMetered,
+                                clients = authenticatedClients,
+                            )
+                        } catch (authenticatedError: Throwable) {
+                            authenticatedError.addSuppressed(anonymousError)
+                            throw authenticatedError
+                        }
                     }
+                } else {
+                    configureExtractionContext(null, null, generator)
+                    extractWithClients(
+                        videoId = normalizedVideoId,
+                        playlistId = playlistId,
+                        audioQuality = audioQuality,
+                        videoQuality = videoQuality,
+                        isMetered = isMetered,
+                        clients = anonymousClients(generator),
+                    )
                 }
                 cachePlayback(cacheKey, playbackData)
                 return playbackData
@@ -436,12 +424,38 @@ object PipePipeExtractor {
         }
     }
 
+    private fun configureExtractionContext(
+        cookie: String?,
+        visitorData: String?,
+        generator: PoTokenGenerator?,
+    ) {
+        downloader.cookie = cookie
+        downloader.visitorData = visitorData
+        NewPipe.setYoutubePoTokenResolver(
+            generator?.let { activeGenerator ->
+                java.util.function.Function { id ->
+                    activeGenerator.getBlocking(id, cookie, visitorData)
+                }
+            },
+        )
+        ServiceList.YouTube.tokens = if (hasSapidCookie(cookie)) cookie else null
+    }
+
+    private fun hasSapidCookie(cookie: String?): Boolean = cookie
+        ?.split(';')
+        ?.asSequence()
+        ?.map(String::trim)
+        ?.any { it.startsWith("SAPISID=") }
+        ?: false
+
     private fun anonymousClients(generator: PoTokenGenerator?): List<String> =
         if (generator != null) {
             listOf("mweb", "visionos", "tv_downgraded", "web", "tv_simply")
         } else {
             listOf("visionos", "tv_downgraded", "web", "tv_simply")
         }
+
+    private const val TAG = "PipePipeExtractor"
 
     private fun extractWithClients(
         videoId: String,
