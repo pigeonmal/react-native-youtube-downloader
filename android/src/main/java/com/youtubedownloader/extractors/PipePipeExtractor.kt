@@ -184,6 +184,7 @@ private class PipePipeDownloader : Downloader() {
     var visitorData: String? = null
 
     override fun execute(request: ExtractorRequest): ExtractorResponse {
+        visitorBootstrapResponse(request.url())?.let { return it }
         client.newCall(buildRequest(request)).execute().use { response ->
             return response.toExtractorResponse()
         }
@@ -215,6 +216,28 @@ private class PipePipeDownloader : Downloader() {
             }
         })
         return cancellableCall
+    }
+
+    private fun visitorBootstrapResponse(url: String): ExtractorResponse? {
+        val activeVisitorData = visitorData?.trim().takeUnless { it.isNullOrEmpty() }
+            ?: return null
+        val isVisitorBootstrap = url.contains("/visitor_id?") || url.contains("/guide?")
+        if (!isVisitorBootstrap) return null
+
+        // PipePipe asks every client to bootstrap visitorData. Reuse the
+        // visitor bound to the current PoToken session instead of issuing a
+        // second request that can be rejected by YouTube.
+        val escapedVisitorData = activeVisitorData
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+        return ExtractorResponse(
+            200,
+            "OK",
+            emptyMap(),
+            "{\"responseContext\":{\"visitorData\":\"$escapedVisitorData\"}}",
+            null,
+            url,
+        )
     }
 
     private fun buildRequest(request: ExtractorRequest): Request {
@@ -280,6 +303,7 @@ private class PipePipeDownloader : Downloader() {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     }
+
 }
 
 object PipePipeExtractor {
@@ -456,7 +480,9 @@ object PipePipeExtractor {
         NewPipe.setYoutubePoTokenResolver(
             generator?.let { activeGenerator ->
                 java.util.function.Function { id ->
-                    activeGenerator.getBlocking(id, normalizedCookie, visitorData)
+                    activeGenerator.getBlocking(id, normalizedCookie, visitorData).also {
+                        downloader.visitorData = it.visitorData
+                    }
                 }
             },
         )
