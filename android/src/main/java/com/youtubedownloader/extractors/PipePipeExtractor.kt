@@ -227,8 +227,10 @@ private class PipePipeDownloader : Downloader() {
             values.forEach { value -> builder.addHeader(name, value) }
         }
 
+        val isVisitorBootstrap = request.url().contains("/visitor_id?") ||
+            request.url().contains("/guide?")
         val activeCookie = cookie?.trim().orEmpty()
-        if (activeCookie.isNotEmpty()) {
+        if (!isVisitorBootstrap && activeCookie.isNotEmpty()) {
             val existingCookie = request.headers().entries
                 .firstOrNull { it.key.equals("Cookie", ignoreCase = true) }
                 ?.value
