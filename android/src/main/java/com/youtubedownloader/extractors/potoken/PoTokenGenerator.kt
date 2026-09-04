@@ -9,7 +9,6 @@ import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.services.youtube.InnertubeClientRequestInfo
 import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
 import org.schabi.newpipe.extractor.services.youtube.YoutubePoTokenResult
-import java.util.HashMap
 
 /** Owns one short-lived BotGuard WebView and mints visitor-bound player PoTokens. */
 internal class PoTokenGenerator(context: Context) {
@@ -84,20 +83,11 @@ internal class PoTokenGenerator(context: Context) {
     private fun getVisitorData(cookie: String?): String {
         val requestInfo = InnertubeClientRequestInfo.ofWebClient()
         requestInfo.clientInfo.clientVersion = YoutubeParsingHelper.getClientVersion()
-        val headers = HashMap(YoutubeParsingHelper.getYouTubeHeaders())
-        if (!cookie.isNullOrBlank()) {
-            headers["Cookie"] = listOf(cookie)
-            headers["Authorization"] = listOf(
-                YoutubeParsingHelper.getAuthorizationHeader(cookie),
-            )
-            headers["X-Origin"] = listOf("https://www.youtube.com")
-            headers["DNT"] = listOf("1")
-        }
         return YoutubeParsingHelper.getVisitorDataFromInnertube(
             requestInfo,
             NewPipe.getPreferredLocalization(),
             NewPipe.getPreferredContentCountry(),
-            headers,
+            YoutubeParsingHelper.getYouTubeHeaders(),
             YoutubeParsingHelper.YOUTUBEI_V1_URL,
             null,
             false,
