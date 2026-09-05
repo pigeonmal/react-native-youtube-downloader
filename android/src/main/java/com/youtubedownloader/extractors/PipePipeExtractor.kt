@@ -784,7 +784,7 @@ object PipePipeExtractor {
                     rangeChunkSizeBytes = clientName.mediaRangeChunkSize(),
                 )
             },
-            clientName = clientName.toPublicClientName(),
+            clientName = clientName,
             extractionDurationMs = extractionDurationMs,
             poTokenDurationMs = poTokenDurationMs,
         )
@@ -801,13 +801,6 @@ object PipePipeExtractor {
             .coerceAtLeast(0L)
             .coerceAtMost(Int.MAX_VALUE.toLong())
             .toInt()
-    }
-
-    private fun String.toPublicClientName(): String = when (lowercase(Locale.ROOT)) {
-        "android_vr" -> "ANDROID_VR"
-        "tv_simply" -> "TVHTML5_SIMPLY"
-        "tv_downgraded" -> "TVHTML5_DOWNGRADED"
-        else -> uppercase(Locale.ROOT)
     }
 
     // YouTube playback is always served through bounded range reads. The
