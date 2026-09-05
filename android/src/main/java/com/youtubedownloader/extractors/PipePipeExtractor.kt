@@ -46,7 +46,7 @@ private data class PlaybackCacheKey(
 
 private data class CachedPlayback(
     val data: PlaybackData,
-    val expiresAtMillis: Long,
+    val expiresAtElapsedRealtime: Long,
 )
 
 data class PlaybackData(
@@ -624,7 +624,6 @@ object PipePipeExtractor {
                         )
                     },
                     audioQuality,
-                    isMetered,
                 ) ?: continue
 
                 val videoStream = videoQuality?.let { requestedQuality ->
@@ -706,7 +705,7 @@ object PipePipeExtractor {
 
     private fun getCachedPlayback(key: PlaybackCacheKey): PlaybackData? {
         val cached = playbackCache[key] ?: return null
-        if (cached.expiresAtMillis - System.currentTimeMillis() <= CACHE_EXPIRY_MARGIN_MS) {
+        if (cached.expiresAtElapsedRealtime - monotonicNowMillis() <= CACHE_EXPIRY_MARGIN_MS) {
             playbackCache.remove(key)
             return null
         }
@@ -717,7 +716,8 @@ object PipePipeExtractor {
         if (data.streamExpiresInSeconds * 1000L <= CACHE_EXPIRY_MARGIN_MS) return
         playbackCache[key] = CachedPlayback(
             data = data,
-            expiresAtMillis = System.currentTimeMillis() + data.streamExpiresInSeconds * 1000L,
+            expiresAtElapsedRealtime =
+                monotonicNowMillis() + data.streamExpiresInSeconds * 1000L,
         )
     }
 
@@ -809,11 +809,9 @@ object PipePipeExtractor {
 
     private fun String.usesChunkedMediaRanges(): Boolean = true
 
-    private fun String.mediaRangeChunkSize(): Long = if (usesChunkedMediaRanges()) {
-        512L * 1_024L
-    } else {
-        1_024L * 1_024L
-    }
+    private fun String.mediaRangeChunkSize(): Long = 512L * 1_024L
+
+    private fun monotonicNowMillis(): Long = System.nanoTime() / 1_000_000L
 
     private fun AudioStream.getBitrateOrAverage(): Int =
         getBitrate().takeIf { it > 0 } ?: getAverageBitrate().coerceAtLeast(0)

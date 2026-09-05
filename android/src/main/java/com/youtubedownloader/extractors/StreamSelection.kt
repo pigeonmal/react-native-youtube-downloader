@@ -20,20 +20,13 @@ internal data class RankedVideoStream<T>(
 internal fun <T> selectAudioStream(
     streams: List<RankedAudioStream<T>>,
     quality: AudioQuality,
-    isMetered: Boolean,
 ): T? {
     val validStreams = streams.filter { it.bitrate > 0 }.ifEmpty { streams }
     if (validStreams.isEmpty()) return null
 
-    // Match InnerTubeX: AUTO uses the low-bandwidth profile on metered networks,
-    // otherwise it prefers WebM/Opus and scores channel count, bitrate and sample rate.
-    val effectiveQuality = if (quality == AudioQuality.AUTO && isMetered) {
-        AudioQuality.LOW
-    } else {
-        quality
-    }
-
-    return when (effectiveQuality) {
+    // Match InnerTubeX: AUTO prefers WebM/Opus and scores channel count,
+    // bitrate and sample rate. LOW is the explicit low-bandwidth profile.
+    return when (quality) {
         AudioQuality.LOW -> {
             validStreams
                 .filter { it.mimeType?.contains("audio/mp4", ignoreCase = true) == true }

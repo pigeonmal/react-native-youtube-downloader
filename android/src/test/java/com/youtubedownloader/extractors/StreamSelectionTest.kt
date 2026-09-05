@@ -14,21 +14,19 @@ class StreamSelectionTest {
             RankedAudioStream("low", 64_000),
         )
 
-        assertEquals("low", selectAudioStream(streams, AudioQuality.LOW, false))
-        assertEquals("low", selectAudioStream(streams, AudioQuality.LOW, true))
+        assertEquals("low", selectAudioStream(streams, AudioQuality.LOW))
     }
 
     @Test
-    fun autoUsesFormatScoreOnUnmeteredAndLowProfileOnMetered() {
+    fun autoUsesFormatScoreOnMeteredAndUnmeteredNetworks() {
         val streams = listOf(
             RankedAudioStream("aac-high", 192_000, "audio/mp4", 2, 44_100),
             RankedAudioStream("aac-low", 64_000, "audio/mp4", 2, 44_100),
             RankedAudioStream("opus", 128_000, "audio/webm", 2, 48_000),
         )
 
-        assertEquals("opus", selectAudioStream(streams, AudioQuality.HIGH, true))
-        assertEquals("opus", selectAudioStream(streams, AudioQuality.AUTO, false))
-        assertEquals("aac-low", selectAudioStream(streams, AudioQuality.AUTO, true))
+        assertEquals("opus", selectAudioStream(streams, AudioQuality.HIGH))
+        assertEquals("opus", selectAudioStream(streams, AudioQuality.AUTO))
     }
 
     @Test
@@ -47,7 +45,7 @@ class StreamSelectionTest {
 
     @Test
     fun emptySelectionReturnsNull() {
-        assertNull(selectAudioStream(emptyList(), AudioQuality.AUTO, false))
+        assertNull(selectAudioStream(emptyList(), AudioQuality.AUTO))
         assertNull(selectVideoStream(emptyList(), VideoQuality.AUTO, false))
     }
 }
