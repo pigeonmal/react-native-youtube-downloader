@@ -22,7 +22,6 @@ internal object PlayerRequest {
         visitorData: String?,
         poToken: String?,
         signatureTimestamp: Long? = null,
-        includeSABR: Boolean = false,
     ): ParsedPlayerResponse {
         val requestBody = JSONObject().apply {
             put("videoId", videoId)
@@ -107,7 +106,7 @@ internal object PlayerRequest {
             if (!response.isSuccessful) {
                 throw IllegalStateException("YouTube ${client.clientName} HTTP ${response.code}: ${body.take(200)}")
             }
-            return PlayerResponseParser.parse(client, body, includeSABR)
+            return PlayerResponseParser.parse(client, body)
         }
     }
 

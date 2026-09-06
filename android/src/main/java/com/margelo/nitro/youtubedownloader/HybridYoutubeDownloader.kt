@@ -30,7 +30,6 @@ class HybridYoutubeDownloader : HybridYoutubeDownloaderSpec() {
     val videoQuality = options.videoQuality.toExtractorVideoQuality()
     val isMetered = connectivityManager?.isActiveNetworkMetered == true
     val authenticatedOnly = options.authenticatedOnly == true
-    val includeSABR = options.includeSABR == true
 
     // Synchronous native cache peek: eliminates thread hopping and binder IPC on cache hits (<0.5ms)
     // Only peek cache when no specific client is forced.
@@ -44,7 +43,6 @@ class HybridYoutubeDownloader : HybridYoutubeDownloaderSpec() {
         cookie = options.cookie,
         forceVisitorData = options.forceVisitorData,
         authenticatedOnly = authenticatedOnly,
-        includeSABR = includeSABR,
       )
       if (cached != null) {
         return Promise.resolved(cached.toNitroPlaybackData())
@@ -62,7 +60,6 @@ class HybridYoutubeDownloader : HybridYoutubeDownloaderSpec() {
         forceVisitorData = options.forceVisitorData,
         authenticatedOnly = authenticatedOnly,
         targetClientName = options.clientName,
-        includeSABR = includeSABR,
       )
       playback.toNitroPlaybackData()
     }

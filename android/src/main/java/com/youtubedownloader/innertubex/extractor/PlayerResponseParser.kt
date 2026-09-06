@@ -28,7 +28,6 @@ internal object PlayerResponseParser {
     fun parse(
         client: YouTubeClient,
         body: String,
-        includeSABR: Boolean = false,
     ): ParsedPlayerResponse {
         val root = JSONObject(body)
         val playability = root.optJSONObject("playabilityStatus")
@@ -57,25 +56,7 @@ internal object PlayerResponseParser {
         val hlsManifestUrl = streaming.optString("hlsManifestUrl").takeIf { it.isNotBlank() }
         val sabrBootstrap = SabrBootstrapFactory.fromPlayerResponse(root)
 
-        val sabrFormats = if (sabrBootstrap != null && (includeSABR || (directCandidates.isEmpty() && hlsManifestUrl.isNullOrBlank()))) {
-            buildList {
-                addAll(parseFormats(streaming.optJSONArray("formats"), root, fallbackUrl = sabrBootstrap.serverAbrStreamingUrl, isSabr = true))
-                addAll(parseFormats(streaming.optJSONArray("adaptiveFormats"), root, fallbackUrl = sabrBootstrap.serverAbrStreamingUrl, isSabr = true))
-            }
-        } else {
-            emptyList()
-        }
-
-        val candidates = if (includeSABR) {
-            buildList {
-                addAll(directCandidates)
-                if (hlsManifestUrl != null) {
-                    addAll(parseFormats(streaming.optJSONArray("formats"), root, fallbackUrl = hlsManifestUrl, isHls = true))
-                    addAll(parseFormats(streaming.optJSONArray("adaptiveFormats"), root, fallbackUrl = hlsManifestUrl, isHls = true))
-                }
-                addAll(sabrFormats)
-            }
-        } else if (directCandidates.isNotEmpty()) {
+        val candidates = if (directCandidates.isNotEmpty()) {
             directCandidates
         } else if (!hlsManifestUrl.isNullOrBlank()) {
             // HLS fallback: associate adaptive format metadata with hlsManifestUrl
@@ -110,8 +91,12 @@ internal object PlayerResponseParser {
                     )
                 )
             }
-        } else if (sabrFormats.isNotEmpty()) {
-            sabrFormats
+        } else if (sabrBootstrap != null) {
+            // SABR fallback: demux UMP media when direct and HLS are unavailable
+            buildList {
+                addAll(parseFormats(streaming.optJSONArray("formats"), root, fallbackUrl = sabrBootstrap.serverAbrStreamingUrl, isSabr = true))
+                addAll(parseFormats(streaming.optJSONArray("adaptiveFormats"), root, fallbackUrl = sabrBootstrap.serverAbrStreamingUrl, isSabr = true))
+            }
         } else {
             emptyList()
         }

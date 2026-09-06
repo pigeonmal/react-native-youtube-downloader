@@ -50,7 +50,6 @@ private data class PlaybackCacheKey(
     val cookieFingerprint: String,
     val visitorDataFingerprint: String,
     val authenticatedOnly: Boolean,
-    val includeSABR: Boolean = false,
 )
 
 private data class CachedPlayback(
@@ -160,7 +159,6 @@ object YoutubeExtractor {
         cookie: String?,
         forceVisitorData: String?,
         authenticatedOnly: Boolean = false,
-        includeSABR: Boolean = false,
     ): PlaybackData? {
         val normalizedVideoId = videoId.trim()
         if (!VIDEO_ID_PATTERN.matches(normalizedVideoId)) return null
@@ -176,7 +174,6 @@ object YoutubeExtractor {
             cookieFingerprint = fingerprint(normalizedCookie),
             visitorDataFingerprint = fingerprint(normalizedVisitorData),
             authenticatedOnly = authenticatedOnly,
-            includeSABR = includeSABR,
         )
 
         return getCachedPlayback(cacheKey)?.copy(extractionDurationMs = 0.0)
@@ -193,7 +190,6 @@ object YoutubeExtractor {
         authenticatedOnly: Boolean = false,
         bypassCache: Boolean = false,
         targetClientName: String? = null,
-        includeSABR: Boolean = false,
     ): PlaybackData = runBlocking(Dispatchers.IO) {
         extractAsync(
             videoId = videoId,
@@ -206,7 +202,6 @@ object YoutubeExtractor {
             authenticatedOnly = authenticatedOnly,
             bypassCache = bypassCache,
             targetClientName = targetClientName,
-            includeSABR = includeSABR,
         )
     }
 
@@ -241,7 +236,6 @@ object YoutubeExtractor {
         authenticatedOnly: Boolean = false,
         bypassCache: Boolean = false,
         targetClientName: String? = null,
-        includeSABR: Boolean = false,
     ): PlaybackData {
         val startedAtNanos = System.nanoTime()
         val normalizedVideoId = videoId.trim()
@@ -261,7 +255,6 @@ object YoutubeExtractor {
             cookieFingerprint = fingerprint(normalizedCookie),
             visitorDataFingerprint = fingerprint(normalizedVisitorData),
             authenticatedOnly = authenticatedOnly,
-            includeSABR = includeSABR,
         )
 
         // Fix for "Sometimes JS total duration is < than native duration":
@@ -349,7 +342,6 @@ object YoutubeExtractor {
                     visitorData = requestVisitorData,
                     poToken = poTokens?.playerRequestPoToken,
                     signatureTimestamp = sigTimestamp,
-                    includeSABR = includeSABR,
                 )
 
                 parsed.visitorData?.let { cacheVisitorData(normalizedCookie, it) }
