@@ -25,7 +25,11 @@ internal data class ParsedPlayerResponse(
 internal object PlayerResponseParser {
     private const val DEFAULT_STREAM_TTL_SECONDS = 5 * 60
 
-    fun parse(client: YouTubeClient, body: String): ParsedPlayerResponse {
+    fun parse(
+        client: YouTubeClient,
+        body: String,
+        includeSABR: Boolean = false,
+    ): ParsedPlayerResponse {
         val root = JSONObject(body)
         val playability = root.optJSONObject("playabilityStatus")
         val status = playability?.optString("status").orEmpty()
@@ -51,8 +55,27 @@ internal object PlayerResponseParser {
         }.filter { it.url.isNotBlank() }
 
         val hlsManifestUrl = streaming.optString("hlsManifestUrl").takeIf { it.isNotBlank() }
+        val sabrBootstrap = SabrBootstrapFactory.fromPlayerResponse(root)
 
-        val candidates = if (directCandidates.isNotEmpty()) {
+        val sabrFormats = if (sabrBootstrap != null && (includeSABR || (directCandidates.isEmpty() && hlsManifestUrl.isNullOrBlank()))) {
+            buildList {
+                addAll(parseFormats(streaming.optJSONArray("formats"), root, fallbackUrl = sabrBootstrap.serverAbrStreamingUrl, isSabr = true))
+                addAll(parseFormats(streaming.optJSONArray("adaptiveFormats"), root, fallbackUrl = sabrBootstrap.serverAbrStreamingUrl, isSabr = true))
+            }
+        } else {
+            emptyList()
+        }
+
+        val candidates = if (includeSABR) {
+            buildList {
+                addAll(directCandidates)
+                if (hlsManifestUrl != null) {
+                    addAll(parseFormats(streaming.optJSONArray("formats"), root, fallbackUrl = hlsManifestUrl, isHls = true))
+                    addAll(parseFormats(streaming.optJSONArray("adaptiveFormats"), root, fallbackUrl = hlsManifestUrl, isHls = true))
+                }
+                addAll(sabrFormats)
+            }
+        } else if (directCandidates.isNotEmpty()) {
             directCandidates
         } else if (!hlsManifestUrl.isNullOrBlank()) {
             // HLS fallback: associate adaptive format metadata with hlsManifestUrl
@@ -83,15 +106,18 @@ internal object PlayerResponseParser {
                         isAudio = true,
                         isVideo = false,
                         isHls = true,
+                        isSabr = false,
                     )
                 )
             }
+        } else if (sabrFormats.isNotEmpty()) {
+            sabrFormats
         } else {
             emptyList()
         }
 
         if (candidates.isEmpty()) {
-            throw IllegalStateException("YouTube ${client.clientName} returned no direct or HLS media URLs")
+            throw IllegalStateException("YouTube ${client.clientName} returned no direct, HLS, or SABR media URLs")
         }
 
         val visitorData = root.optJSONObject("responseContext")
@@ -127,8 +153,6 @@ internal object PlayerResponseParser {
             )
         }
 
-        val sabrBootstrap = SabrBootstrapFactory.fromPlayerResponse(root)
-
         return ParsedPlayerResponse(
             root = root,
             visitorData = visitorData,
@@ -147,11 +171,12 @@ internal object PlayerResponseParser {
         root: JSONObject,
         fallbackUrl: String? = null,
         isHls: Boolean = false,
+        isSabr: Boolean = false,
     ): List<StreamCandidate> {
         if (formats == null) return emptyList()
         return (0 until formats.length()).mapNotNull { i ->
             val format = formats.optJSONObject(i) ?: return@mapNotNull null
-            parseStreamCandidate(format, root, fallbackUrl, isHls)
+            parseStreamCandidate(format, root, fallbackUrl, isHls, isSabr)
         }
     }
 
@@ -160,6 +185,7 @@ internal object PlayerResponseParser {
         root: JSONObject,
         fallbackUrl: String? = null,
         isHls: Boolean = false,
+        isSabr: Boolean = false,
     ): StreamCandidate? {
         val directUrl = format.optString("url").takeIf { it.isNotBlank() }
         val cipherPayload = format.optString("signatureCipher").takeIf { it.isNotBlank() }
@@ -200,6 +226,7 @@ internal object PlayerResponseParser {
             isAudio = isAudio,
             isVideo = isVideo,
             isHls = isHls,
+            isSabr = isSabr,
         )
     }
 

@@ -18,4 +18,6 @@ export interface ExtractStreamOptions {
   authenticatedOnly?: boolean;
   /** Optional specific client name to target (e.g. 'IOS', 'ANDROID_VR', 'WEB', 'MWEB', 'TVHTML5_SIMPLY'). */
   clientName?: string;
+  /** When true, formats using SABR (Server Adaptive Bitrate / UMP) are included in candidate selection. */
+  includeSABR?: boolean;
 }

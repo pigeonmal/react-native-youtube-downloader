@@ -19,4 +19,5 @@ internal data class StreamCandidate(
     val isAudio: Boolean,
     val isVideo: Boolean,
     val isHls: Boolean = false,
+    val isSabr: Boolean = false,
 )

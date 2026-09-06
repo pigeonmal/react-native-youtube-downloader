@@ -23,6 +23,10 @@ export interface StreamPlayback {
   rangeChunkSizeBytes?: number;
   /** Whether the stream is an HLS playlist rather than a progressive stream. */
   isHls?: boolean;
+  /** Whether the stream is a SABR / UMP binary stream. */
+  isSabr?: boolean;
+  /** Optional ustreamer config required for SABR UMP streaming requests. */
+  sabrUstreamerConfig?: string;
 }
 
 /** Metadata describing one selected YouTube format. */

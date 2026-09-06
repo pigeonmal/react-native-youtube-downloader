@@ -26,6 +26,8 @@ private fun ExtractorStreamPlayback.toNitroStreamPlayback(): StreamPlayback = St
   requestHeaders = requestHeaders.takeIf { it.isNotEmpty() },
   rangeChunkSizeBytes = rangeChunkSizeBytes.takeIf { it > 0L }?.toDouble(),
   isHls = isHls.takeIf { it },
+  isSabr = isSabr.takeIf { it },
+  sabrUstreamerConfig = sabrUstreamerConfig,
 )
 
 private fun ExtractorStreamFormat.toNitroStreamFormat(): StreamFormat = StreamFormat(

@@ -1,6 +1,6 @@
 {
   "name": "@pigeonmal/react-native-youtube-downloader",
-  "version": "1.2.16",
+  "version": "1.2.17",
   "description": "Fast direct YouTube stream extraction for React Native",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -40,7 +40,7 @@
     "nitrogen": "nitrogen",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
-    "test": "jest",
+    "test": "jest --passWithNoTests",
     "release": "release-it --only-version"
   },
   "keywords": [
@@ -59,7 +59,7 @@
   },
   "homepage": "https://github.com/pigeonmal/react-native-youtube-downloader#readme",
   "publishConfig": {
-    "registry": "https://registry.npmjs.org/"
+    "registry": "https://npm.pkg.github.com"
   },
   "devDependencies": {
     "@commitlint/config-conventional": "^21.0.2",
