@@ -139,6 +139,45 @@ class YoutubeExtractorLiveTest {
         assertTrue("candidateItags must not be empty", sabr.candidateItags.isNotEmpty())
     }
 
+    @Test
+    fun testSabrLiveFetchChunks() {
+        assumeTrue("Set YOUTUBE_LIVE_TEST=1 to run the network smoke test", System.getenv("YOUTUBE_LIVE_TEST") == "1")
+
+        for (client in listOf(
+            com.youtubedownloader.innertubex.client.TvSimplyClient.TVHTML5_SIMPLY,
+            com.youtubedownloader.innertubex.client.TvSimplyClient.TVHTML5_EMBEDDED,
+            com.youtubedownloader.innertubex.client.AndroidVrClient.ANDROID_VR_1_65_10,
+        )) {
+            val response = com.youtubedownloader.innertubex.extractor.PlayerRequest.execute(
+                httpClient = okhttp3.OkHttpClient(),
+                client = client,
+                videoId = "dQw4w9WgXcQ",
+                playlistId = null,
+                cookie = null,
+                visitorData = null,
+                poToken = null,
+                signatureTimestamp = 20697L,
+            )
+
+            val sabr = response.sabrBootstrap
+            org.junit.Assert.assertNotNull("SABR bootstrap must be present for ${client.clientName}", sabr)
+            val audioItag = sabr!!.candidateItags.firstOrNull { it == 251 || it == 140 } ?: sabr.candidateItags.first()
+            println("[SABR PROBE] Probing ${client.clientName} (friendly=${client.friendlyName}), itag=$audioItag, config=${sabr.videoPlaybackUstreamerConfig?.take(30)}...")
+            try {
+                val chunks = com.youtubedownloader.innertubex.sabr.SabrClient.fetchMediaChunks(
+                    httpClient = okhttp3.OkHttpClient(),
+                    bootstrap = sabr,
+                    selectedItag = audioItag,
+                    userAgent = client.userAgent,
+                )
+                val totalBytes = chunks.sumOf { it.data.size.toLong() }
+                println("[SABR PROBE] ${client.friendlyName}: SUCCESS! Chunks=${chunks.size}, bytes=$totalBytes")
+            } catch (e: Throwable) {
+                println("[SABR PROBE] ${client.friendlyName}: FAILED - ${e.message}")
+            }
+        }
+    }
+
     private fun extractPublicVideo() = YoutubeExtractor.extract(
         videoId = "dQw4w9WgXcQ",
         playlistId = null,
