@@ -711,7 +711,7 @@ export default function App() {
               {state.clientVerifications?.filter(
                 (c) => c.status === 'success' && c.streamReachable
               ).length ?? 0}
-              /9)
+              /{state.clientVerifications?.length ?? CLIENTS_TO_TEST.length})
             </Text>
           </TouchableOpacity>
 
