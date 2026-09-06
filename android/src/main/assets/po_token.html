@@ -1,119 +1,56 @@
 <!DOCTYPE html>
 <html lang="en"><head><title></title><script>
-/**
- * Factory method to create and load a BotGuardClient instance.
- * @param challengeData - Configuration returned by BotGuard.
- * @returns A promise that resolves to a loaded BotGuardClient instance.
- */
 function loadBotGuard(challengeData) {
   this.vm = this[challengeData.globalName];
   this.program = challengeData.program;
   this.vmFunctions = {};
-  this.syncSnapshotFunction = null;
-
-  if (!this.vm)
-    throw new Error('[BotGuardClient]: VM not found in the global object');
-
-  if (!this.vm.a)
-    throw new Error('[BotGuardClient]: Could not load program');
-
-  const vmFunctionsCallback = function (
-    asyncSnapshotFunction,
-    shutdownFunction,
-    passEventFunction,
-    checkCameraFunction
-  ) {
-    this.vmFunctions = {
-      asyncSnapshotFunction: asyncSnapshotFunction,
-      shutdownFunction: shutdownFunction,
-      passEventFunction: passEventFunction,
-      checkCameraFunction: checkCameraFunction
-    };
+  if (!this.vm || !this.vm.a) throw new Error('[BotGuardClient]: VM unavailable');
+  var owner = this;
+  var vmFunctionsCallback = function (asyncSnapshotFunction, shutdownFunction, passEventFunction, checkCameraFunction) {
+    owner.vmFunctions = { asyncSnapshotFunction: asyncSnapshotFunction, shutdownFunction: shutdownFunction, passEventFunction: passEventFunction, checkCameraFunction: checkCameraFunction };
   };
-
-  this.syncSnapshotFunction = this.vm.a(
-    this.program,
-    vmFunctionsCallback,
-    true,
-    this.userInteractionElement,
-    function () {/** no-op */},
-    [ [], [] ]
-  )[0]
-
-  // BotGuard initializes its asynchronous callbacks after the VM starts. The
-  // short interval gives the WebView event loop a chance to run them.
+  this.vm.a(this.program, vmFunctionsCallback, true, this.userInteractionElement, function () {}, [[], []]);
   return new Promise(function (resolve, reject) {
-    i = 0
-    refreshIntervalId = setInterval(function () {
-      if (!!this.vmFunctions.asyncSnapshotFunction) {
-        resolve(this)
+    var i = 0;
+    var refreshIntervalId = setInterval(function () {
+      if (owner.vmFunctions.asyncSnapshotFunction) {
         clearInterval(refreshIntervalId);
-      }
-      if (i >= 10000) {
-        reject("asyncSnapshotFunction is null even after 10 seconds")
+        resolve(owner);
+      } else if (i++ >= 10000) {
         clearInterval(refreshIntervalId);
+        reject('asyncSnapshotFunction is null even after 10 seconds');
       }
-      i += 1;
     }, 1);
-  })
-}
-
-/** Takes a BotGuard snapshot asynchronously. */
-function snapshot(args) {
-  return new Promise(function (resolve, reject) {
-    if (!this.vmFunctions.asyncSnapshotFunction)
-      return reject(new Error('[BotGuardClient]: Async snapshot function not found'));
-
-    this.vmFunctions.asyncSnapshotFunction(function (response) { resolve(response) }, [
-      args.contentBinding,
-      args.signedTimestamp,
-      args.webPoSignalOutput,
-      args.skipPrivacyBuffer
-    ]);
   });
 }
 
-function runBotGuard(challengeData) {
-  const interpreterJavascript =
-    challengeData.interpreterJavascript.privateDoNotAccessOrElseSafeScriptWrappedValue;
-
-  if (interpreterJavascript) {
-    new Function(interpreterJavascript)();
-  } else throw new Error('Could not load VM');
-
-  const webPoSignalOutput = [];
-  return loadBotGuard({
-    globalName: challengeData.globalName,
-    globalObj: this,
-    program: challengeData.program
-  }).then(function (botguard) {
-    return botguard.snapshot({ webPoSignalOutput: webPoSignalOutput })
-  }).then(function (botguardResponse) {
-    return { webPoSignalOutput: webPoSignalOutput, botguardResponse: botguardResponse }
-  })
+function snapshot(args) {
+  return new Promise(function (resolve, reject) {
+    if (!this.vmFunctions.asyncSnapshotFunction) return reject(new Error('[BotGuardClient]: Async snapshot function not found'));
+    this.vmFunctions.asyncSnapshotFunction(function (response) { resolve(response); }, [args.contentBinding, args.signedTimestamp, args.webPoSignalOutput, args.skipPrivacyBuffer]);
+  }.bind(this));
 }
 
-// The minter factory must be called for every identifier. Its returned
-// callback is bound to the integrity token and is intentionally not cached.
+function runBotGuard(challengeData) {
+  var interpreterJavascript = challengeData.interpreterJavascript.privateDoNotAccessOrElseSafeScriptWrappedValue;
+  if (!interpreterJavascript) throw new Error('Could not load VM');
+  new Function(interpreterJavascript)();
+  var webPoSignalOutput = [];
+  return loadBotGuard({ globalName: challengeData.globalName, program: challengeData.program }).then(function (botguard) {
+    return snapshot.call(botguard, { webPoSignalOutput: webPoSignalOutput });
+  }).then(function (botguardResponse) {
+    return { webPoSignalOutput: webPoSignalOutput, botguardResponse: botguardResponse };
+  });
+}
+
 function obtainPoToken(webPoSignalOutput, integrityToken, identifier) {
-  const getMinter = webPoSignalOutput[0];
-
-  if (!getMinter)
-    throw new Error('PMD:Undefined');
-
-  const mintCallback = getMinter(integrityToken);
-
-  if (!(mintCallback instanceof Function))
-    throw new Error('APF:Failed');
-
-  const result = mintCallback(identifier);
-
-  if (!result)
-    throw new Error('YNJ:Undefined');
-
-  if (!(result instanceof Uint8Array))
-    throw new Error('ODM:Invalid');
-
+  var getMinter = webPoSignalOutput[0];
+  if (!getMinter) throw new Error('PMD:Undefined');
+  var mintCallback = getMinter(integrityToken);
+  if (!(mintCallback instanceof Function)) throw new Error('APF:Failed');
+  var result = mintCallback(identifier);
+  if (!result) throw new Error('YNJ:Undefined');
+  if (!(result instanceof Uint8Array)) throw new Error('ODM:Invalid');
   return result;
 }
 </script></head><body></body></html>

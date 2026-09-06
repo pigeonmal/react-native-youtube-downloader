@@ -1,6 +1,16 @@
 buildscript {
-  ext.getExtOrDefault = {name ->
-    return rootProject.ext.has(name) ? rootProject.ext.get(name) : project.properties['YoutubeDownloader_' + name]
+  ext.YoutubeDownloader = [
+    kotlinVersion: "2.0.21",
+    minSdkVersion: 24,
+    compileSdkVersion: 36
+  ]
+
+  ext.getExtOrDefault = { prop ->
+    if (rootProject.ext.has(prop)) {
+      return rootProject.ext.get(prop)
+    }
+
+    return YoutubeDownloader[prop]
   }
 
   repositories {
@@ -12,83 +22,99 @@ buildscript {
     classpath "com.android.tools.build:gradle:8.7.2"
     // noinspection DifferentKotlinGradleVersion
     classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${getExtOrDefault('kotlinVersion')}"
-    classpath "org.jetbrains.kotlin:kotlin-serialization:${getExtOrDefault('kotlinVersion')}"
   }
 }
 
+def reactNativeArchitectures() {
+  def value = rootProject.getProperties().get("reactNativeArchitectures")
+  return value ? value.split(",") : ["armeabi-v7a", "x86", "x86_64", "arm64-v8a"]
+}
 
 apply plugin: "com.android.library"
 apply plugin: "kotlin-android"
-apply plugin: "org.jetbrains.kotlin.plugin.serialization"
+apply from: '../nitrogen/generated/android/youtubedownloader+autolinking.gradle'
+
 apply plugin: "com.facebook.react"
 
-def getExtOrIntegerDefault(name) {
-  return rootProject.ext.has(name) ? rootProject.ext.get(name) : (project.properties["YoutubeDownloader_" + name]).toInteger()
-}
-
 android {
-  namespace "com.youtubedownloader"
+  namespace "com.margelo.nitro.youtubedownloader"
 
-  compileSdkVersion getExtOrIntegerDefault("compileSdkVersion")
+  compileSdkVersion getExtOrDefault("compileSdkVersion")
 
   defaultConfig {
-    minSdkVersion getExtOrIntegerDefault("minSdkVersion")
-    targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
-    consumerProguardFiles 'proguard-rules.pro'
-  }
+    minSdkVersion getExtOrDefault("minSdkVersion")
 
-  buildFeatures {
-    buildConfig true
-  }
+    externalNativeBuild {
+      cmake {
+        cppFlags "-frtti -fexceptions -Wall -fstack-protector-all"
+        arguments "-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+        abiFilters (*reactNativeArchitectures())
 
-  buildTypes {
-    release {
-      minifyEnabled false
+        buildTypes {
+          debug {
+            cppFlags "-O1 -g"
+          }
+          release {
+            cppFlags "-O2"
+          }
+        }
+      }
     }
   }
 
-  lintOptions {
-    disable "GradleCompatible"
+  externalNativeBuild {
+    cmake {
+      path "CMakeLists.txt"
+    }
   }
 
-  compileOptions {
-    sourceCompatibility JavaVersion.VERSION_1_8
-    targetCompatibility JavaVersion.VERSION_1_8
-  }
+  packaging {
+    resources {
+      excludes += [
+        "META-INF",
+        "META-INF/**"
+      ]
+    }
 
-  sourceSets {
-    main {
-      java.srcDirs += [
-        "generated/java",
-        "generated/jni"
+    jniLibs {
+      excludes += [
+        "**/libc++_shared.so",
+        "**/libfbjni.so",
+        "**/libjsi.so",
+        "**/libfolly_json.so",
+        "**/libfolly_runtime.so",
+        "**/libglog.so",
+        "**/libhermes.so",
+        "**/libhermes-executor-debug.so",
+        "**/libhermes_executor.so",
+        "**/libreactnative.so",
+        "**/libreactnativejni.so",
+        "**/libturbomodulejsijni.so",
+        "**/libreact_nativemodule_core.so",
+        "**/libjscexecutor.so"
       ]
     }
   }
-}
 
-repositories {
-  mavenCentral()
-  google()
-}
+  buildFeatures {
+    prefab true
+  }
 
-def kotlin_version = getExtOrDefault("kotlinVersion")
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+
+  testOptions {
+    unitTests.returnDefaultValues = true
+  }
+}
 
 dependencies {
   implementation "com.facebook.react:react-android"
-  implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+  implementation project(":react-native-nitro-modules")
+  implementation "com.squareup.okhttp3:okhttp:4.9.2"
   implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2"
-
-  implementation fileTree(dir: "libs", include: ["*.jar"])
-  implementation "com.github.TeamNewPipe:nanojson:1d9e1aea9049fc9f85e68b43ba39fe7be1c1f751"
-  implementation "org.jsoup:jsoup:1.18.3"
-  implementation "org.java-websocket:Java-WebSocket:1.5.7"
-  implementation "org.nibor.autolink:autolink:0.11.0"
-  implementation "com.google.protobuf:protobuf-java:4.29.3"
-  implementation "org.brotli:dec:0.1.2"
-  implementation "org.apache.commons:commons-lang3:3.17.0"
-  compileOnly "org.bouncycastle:bcprov-jdk18on:1.80"
-  implementation "com.squareup.okhttp3:okhttp:4.12.0"
-
   testImplementation "junit:junit:4.13.2"
-  testImplementation "org.bouncycastle:bcprov-jdk18on:1.80"
+  testImplementation "org.json:json:20240303"
 }

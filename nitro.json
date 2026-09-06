@@ -1,0 +1,23 @@
+{
+  "cxxNamespace": ["youtubedownloader"],
+  "ios": {
+    "iosModuleName": "YoutubeDownloader"
+  },
+  "android": {
+    "androidNamespace": ["youtubedownloader"],
+    "androidCxxLibName": "youtubedownloader"
+  },
+  "autolinking": {
+    "YoutubeDownloader": {
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "HybridYoutubeDownloader"
+      },
+      "ios": {
+        "language": "swift",
+        "implementationClassName": "YoutubeDownloader"
+      }
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

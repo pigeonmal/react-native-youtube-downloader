@@ -4,7 +4,6 @@
 
 # XDE
 .expo/
-.idx/
 
 # VSCode
 .vscode/
@@ -61,7 +60,6 @@ buck-out/
 \.buckd/
 android/app/libs
 android/keystores/debug.keystore
-.kotlin/
 
 # Yarn
 .yarn/*

@@ -1,0 +1,565 @@
+package com.youtubedownloader.innertubex
+
+import android.content.Context
+import android.net.Uri
+import android.util.Log
+import com.youtubedownloader.innertubex.client.ClientCatalog
+import com.youtubedownloader.innertubex.client.YouTubeClient
+import com.youtubedownloader.innertubex.extractor.PlayerRequest
+import com.youtubedownloader.innertubex.extractor.StreamCandidate
+import com.youtubedownloader.innertubex.extractor.StreamSelector
+import com.youtubedownloader.innertubex.models.AudioConfig
+import com.youtubedownloader.innertubex.models.PlaybackData
+import com.youtubedownloader.innertubex.models.PlaybackTracking
+import com.youtubedownloader.innertubex.models.StreamFormat
+import com.youtubedownloader.innertubex.models.StreamPlayback
+import com.youtubedownloader.innertubex.models.VideoDetails
+import com.youtubedownloader.innertubex.potoken.PoTokenGenerator
+import com.youtubedownloader.innertubex.potoken.VisitorDataFetcher
+import com.youtubedownloader.models.AudioQuality
+import com.youtubedownloader.models.VideoQuality
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import okhttp3.ConnectionPool
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.util.LinkedHashMap
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+
+// Typealiases for seamless backward compatibility with existing pure-music and nitro imports
+typealias PlaybackData = com.youtubedownloader.innertubex.models.PlaybackData
+typealias StreamPlayback = com.youtubedownloader.innertubex.models.StreamPlayback
+typealias StreamFormat = com.youtubedownloader.innertubex.models.StreamFormat
+typealias AudioConfig = com.youtubedownloader.innertubex.models.AudioConfig
+typealias VideoDetails = com.youtubedownloader.innertubex.models.VideoDetails
+typealias PlaybackTracking = com.youtubedownloader.innertubex.models.PlaybackTracking
+
+private data class PlaybackCacheKey(
+    val videoId: String,
+    val playlistId: String?,
+    val audioQuality: AudioQuality,
+    val videoQuality: VideoQuality?,
+    val isMetered: Boolean,
+    val cookieFingerprint: String,
+    val visitorDataFingerprint: String,
+    val authenticatedOnly: Boolean,
+)
+
+private data class CachedPlayback(
+    val data: PlaybackData,
+    val expiresAtElapsedRealtime: Long,
+)
+
+private data class ClientHealthKey(
+    val videoId: String,
+    val cookieFingerprint: String,
+    val visitorDataFingerprint: String,
+    val authenticatedOnly: Boolean,
+)
+
+private data class FailedClient(
+    val clientName: String,
+    val expiresAtElapsedRealtime: Long,
+)
+
+private data class CachedVisitorData(
+    val value: String,
+    val expiresAtElapsedRealtime: Long,
+)
+
+/**
+ * Clean, high-performance YouTube playback extractor inspired by InnerTubeX.
+ * Provides anonymous-first extraction with authenticated cookie fallback.
+ */
+object YoutubeExtractor {
+    private const val TAG = "YoutubeExtractor"
+    private const val CACHE_EXPIRY_MARGIN_MS = 30_000L
+    private const val FAILED_CLIENT_TTL_MS = 5 * 60 * 1000L
+    private const val MAX_CACHED_PLAYBACKS = 32
+    private const val MAX_FAILED_CLIENTS = 64
+    private const val VISITOR_DATA_CACHE_TTL_MS = 30 * 60 * 1000L
+    private const val TV_CONFIG_CACHE_TTL_MS = 6 * 60 * 60 * 1000L
+    private const val RANGE_CHUNK_SIZE_BYTES = 10L * 1024L * 1024L
+    private const val PUBLIC_WEB_USER_AGENT =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+    private val httpClient = OkHttpClient.Builder()
+        .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(25, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(35, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
+
+    private val warmUpScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val playbackCache = object : LinkedHashMap<PlaybackCacheKey, CachedPlayback>(
+        MAX_CACHED_PLAYBACKS,
+        0.75f,
+        true,
+    ) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<PlaybackCacheKey, CachedPlayback>?) =
+            size > MAX_CACHED_PLAYBACKS
+    }
+    private val failedClients = object : LinkedHashMap<ClientHealthKey, FailedClient>(
+        MAX_FAILED_CLIENTS,
+        0.75f,
+        true,
+    ) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<ClientHealthKey, FailedClient>?) =
+            size > MAX_FAILED_CLIENTS
+    }
+    private val visitorDataCache = HashMap<String, CachedVisitorData>()
+
+    @Volatile private var poTokenGenerator: PoTokenGenerator? = null
+    @Volatile private var isConfigured = false
+    @Volatile private var isWarmingUp = false
+    @Volatile private var tvSignatureTimestamp: Long? = null
+    @Volatile private var tvSignatureTimestampExpiresAt = 0L
+
+    private val VIDEO_ID_PATTERN = Regex("^[a-zA-Z0-9_-]{11}$")
+    private val PLAYLIST_ID_PATTERN = Regex("^[a-zA-Z0-9_-]{2,}$")
+
+    @Synchronized
+    fun configure(context: Context) {
+        if (!isConfigured) {
+            poTokenGenerator = PoTokenGenerator(context.applicationContext)
+            isConfigured = true
+        }
+    }
+
+    fun warmUp() {
+        if (isWarmingUp) return
+        isWarmingUp = true
+        warmUpScope.launch {
+            runCatching {
+                resolveTvSignatureTimestamp()
+                val visitorData = fetchVisitorData("dQw4w9WgXcQ", null)
+                if (!visitorData.isNullOrBlank()) {
+                    poTokenGenerator?.prewarm(visitorData, null)
+                }
+            }
+        }
+    }
+
+    fun extract(
+        videoId: String,
+        playlistId: String?,
+        audioQuality: AudioQuality,
+        videoQuality: VideoQuality?,
+        isMetered: Boolean,
+        cookie: String?,
+        forceVisitorData: String?,
+        authenticatedOnly: Boolean = false,
+        bypassCache: Boolean = false,
+    ): PlaybackData = runBlocking(Dispatchers.IO) {
+        extractAsync(
+            videoId = videoId,
+            playlistId = playlistId,
+            audioQuality = audioQuality,
+            videoQuality = videoQuality,
+            isMetered = isMetered,
+            cookie = cookie,
+            forceVisitorData = forceVisitorData,
+            authenticatedOnly = authenticatedOnly,
+            bypassCache = bypassCache,
+        )
+    }
+
+    suspend fun extractAsync(
+        videoId: String,
+        playlistId: String?,
+        audioQuality: AudioQuality,
+        videoQuality: VideoQuality?,
+        isMetered: Boolean,
+        cookie: String?,
+        forceVisitorData: String?,
+        authenticatedOnly: Boolean = false,
+        bypassCache: Boolean = false,
+    ): PlaybackData {
+        val startedAtNanos = System.nanoTime()
+        val normalizedVideoId = videoId.trim()
+        require(VIDEO_ID_PATTERN.matches(normalizedVideoId)) { "Invalid YouTube video ID" }
+        val normalizedCookie = normalizeCookie(cookie)
+        val normalizedVisitorData = forceVisitorData?.trim().takeUnless { it.isNullOrEmpty() }
+        require(!authenticatedOnly || !normalizedCookie.isNullOrBlank()) {
+            "Authenticated YouTube extraction requires a cookie"
+        }
+
+        val cacheKey = PlaybackCacheKey(
+            videoId = normalizedVideoId,
+            playlistId = playlistId,
+            audioQuality = audioQuality,
+            videoQuality = videoQuality,
+            isMetered = isMetered,
+            cookieFingerprint = fingerprint(normalizedCookie),
+            visitorDataFingerprint = fingerprint(normalizedVisitorData),
+            authenticatedOnly = authenticatedOnly,
+        )
+
+        // Fix for "Sometimes JS total duration is < than native duration":
+        // On cache hit, return the actual elapsed time of this call (<1ms) instead of stale cold duration
+        if (!bypassCache) {
+            getCachedPlayback(cacheKey)?.let { cached ->
+                val elapsedMs = (System.nanoTime() - startedAtNanos) / 1_000_000.0
+                return cached.copy(extractionDurationMs = elapsedMs)
+            }
+        }
+
+        val excluded = failedClientsFor(cacheKey)
+        val clients = ClientCatalog.getClients(normalizedCookie, authenticatedOnly, excluded)
+        var lastError: Throwable? = null
+
+        for (client in clients) {
+            val clientStart = System.nanoTime()
+            try {
+                val requestVisitorData = normalizedVisitorData ?: fetchVisitorData(normalizedVideoId, normalizedCookie)
+
+                val poTokens = if (client.requirePoToken) {
+                    val visitor = requestVisitorData ?: fetchVisitorData(normalizedVideoId, normalizedCookie)
+                        ?: throw IllegalStateException("YouTube ${client.clientName} requires visitorData for PoToken")
+                    poTokenGenerator?.getWebClientPoToken(
+                        normalizedVideoId,
+                        visitor,
+                        normalizedCookie,
+                    ) ?: throw IllegalStateException("YouTube ${client.clientName} PoToken unavailable")
+                } else null
+
+                val sigTimestamp = if (client.useSignatureTimestamp) resolveTvSignatureTimestamp() else null
+
+                val parsed = PlayerRequest.execute(
+                    httpClient = httpClient,
+                    client = client,
+                    videoId = normalizedVideoId,
+                    playlistId = playlistId,
+                    cookie = if (client.loginSupported) normalizedCookie else null,
+                    visitorData = requestVisitorData,
+                    poToken = poTokens?.playerRequestPoToken,
+                    signatureTimestamp = sigTimestamp,
+                )
+
+                parsed.visitorData?.let { cacheVisitorData(normalizedCookie, it) }
+
+                val audioCandidate = StreamSelector.selectAudio(parsed.candidates, audioQuality)
+                    ?: throw IllegalStateException("${client.clientName} returned no playable audio stream")
+
+                val videoCandidate = videoQuality?.let { vq ->
+                    StreamSelector.selectVideo(parsed.candidates, vq, isMetered)
+                        ?: throw IllegalStateException("${client.clientName} returned no video for $vq")
+                }
+
+                val totalElapsedMs = (System.nanoTime() - startedAtNanos) / 1_000_000.0
+                val playback = toPlaybackData(
+                    client = client,
+                    parsed = parsed,
+                    audio = audioCandidate,
+                    video = videoCandidate,
+                    totalElapsedMs = totalElapsedMs,
+                    streamingDataPoToken = poTokens?.streamingDataPoToken,
+                )
+
+                clearSuccessfulClient(cacheKey, client.clientName)
+                cachePlayback(cacheKey, playback)
+                try { Log.d(TAG, "${client.clientName} succeeded in ${elapsedMillis(clientStart)}ms; total=${totalElapsedMs.toInt()}ms") } catch (_: Throwable) {}
+                return playback
+            } catch (error: Throwable) {
+                lastError = error
+                try { Log.w(TAG, "${client.clientName} failed in ${elapsedMillis(clientStart)}ms: ${error.message}") } catch (_: Throwable) {}
+            }
+        }
+
+        throw lastError ?: IllegalStateException("No YouTube playback client returned a stream")
+    }
+
+    fun generatePoToken(
+        videoId: String,
+        cookie: String? = null,
+        preferredVisitorData: String? = null,
+    ): String = runBlocking(Dispatchers.IO) {
+        generatePoTokenAsync(videoId, cookie, preferredVisitorData)
+    }
+
+    suspend fun generatePoTokenAsync(
+        videoId: String,
+        cookie: String? = null,
+        preferredVisitorData: String? = null,
+    ): String {
+        val visitorData = preferredVisitorData?.trim().takeUnless { it.isNullOrEmpty() }
+            ?: fetchVisitorData(videoId, cookie)
+            ?: throw IllegalStateException("Unable to obtain YouTube visitor data")
+        return checkNotNull(poTokenGenerator) {
+            "YoutubeExtractor must be configured before generating a PoToken"
+        }.getWebClientPoToken(videoId, visitorData, normalizeCookie(cookie))
+            ?.playerRequestPoToken
+            ?: throw IllegalStateException("WebView BotGuard token generation is unavailable")
+    }
+
+    fun recordPlaybackFailure(
+        videoId: String,
+        clientName: String,
+        cookie: String? = null,
+        visitorData: String? = null,
+        authenticatedOnly: Boolean = false,
+    ) {
+        val key = ClientHealthKey(
+            videoId = videoId.trim(),
+            cookieFingerprint = fingerprint(normalizeCookie(cookie)),
+            visitorDataFingerprint = fingerprint(visitorData?.trim()),
+            authenticatedOnly = authenticatedOnly,
+        )
+        synchronized(failedClients) {
+            failedClients[key] = FailedClient(clientName, monotonicNowMillis() + FAILED_CLIENT_TTL_MS)
+        }
+        clearCachedPlayback(videoId)
+    }
+
+    fun clearCachedPlayback(videoId: String? = null) {
+        synchronized(playbackCache) {
+            if (videoId == null) {
+                playbackCache.clear()
+            } else {
+                playbackCache.entries.removeIf { it.key.videoId == videoId }
+            }
+        }
+    }
+
+    fun hasSupportedAuthCookie(cookie: String?): Boolean =
+        normalizeCookie(cookie)?.split(';')?.any { pair ->
+            val name = pair.substringBefore('=', "").trim()
+            val value = pair.substringAfter('=', "").trim()
+            value.isNotEmpty() && (name == "SAPISID" || name == "__Secure-3PAPISID")
+        } == true
+
+    fun isYoutubeBotChallenge(throwable: Throwable): Boolean {
+        var current: Throwable? = throwable
+        while (current != null) {
+            val message = current.message?.lowercase(Locale.ROOT).orEmpty()
+            if (
+                message.contains("sign in to confirm") ||
+                message.contains("confirm you're not a bot") ||
+                message.contains("confirm you’re not a bot") ||
+                message.contains("not a bot")
+            ) return true
+            current = current.cause
+        }
+        return false
+    }
+
+    private fun toPlaybackData(
+        client: YouTubeClient,
+        parsed: com.youtubedownloader.innertubex.extractor.ParsedPlayerResponse,
+        audio: StreamCandidate,
+        video: StreamCandidate?,
+        totalElapsedMs: Double,
+        streamingDataPoToken: String?,
+    ): PlaybackData {
+        val audioHeaders = buildStreamHeaders(client)
+        val audioStream = StreamPlayback(
+            format = toStreamFormat(audio, parsed.audioConfig),
+            streamUrl = audio.url.withStreamingPoToken(streamingDataPoToken),
+            requestHeaders = audioHeaders,
+            rangeChunkSizeBytes = RANGE_CHUNK_SIZE_BYTES,
+        )
+        val videoStream = video?.let { v ->
+            StreamPlayback(
+                format = toStreamFormat(v, null),
+                streamUrl = v.url.withStreamingPoToken(streamingDataPoToken),
+                requestHeaders = buildStreamHeaders(client),
+                rangeChunkSizeBytes = RANGE_CHUNK_SIZE_BYTES,
+            )
+        }
+
+        return PlaybackData(
+            audioConfig = parsed.audioConfig,
+            videoDetails = parsed.videoDetails,
+            playbackTracking = parsed.playbackTracking,
+            streamExpiresInSeconds = parsed.expiresInSeconds,
+            audioStream = audioStream,
+            videoStream = videoStream,
+            clientName = client.clientName,
+            extractionDurationMs = totalElapsedMs,
+            poTokenDurationMs = null,
+        )
+    }
+
+    private fun toStreamFormat(candidate: StreamCandidate, audioConfig: AudioConfig?): StreamFormat =
+        StreamFormat(
+            itag = candidate.itag,
+            mimeType = candidate.mimeType,
+            bitrate = candidate.bitrate,
+            width = candidate.width,
+            height = candidate.height,
+            contentLength = candidate.contentLength,
+            quality = candidate.quality,
+            fps = candidate.fps,
+            qualityLabel = candidate.qualityLabel,
+            approxDurationMs = candidate.approxDurationMs,
+            audioSampleRate = candidate.audioSampleRate,
+            audioChannels = candidate.audioChannels,
+            loudnessDb = audioConfig?.loudnessDb,
+        )
+
+    private fun buildStreamHeaders(client: YouTubeClient): Map<String, String> {
+        val headers = LinkedHashMap<String, String>()
+        headers["User-Agent"] = client.userAgent
+        if (client.useMusicPlayerEndpoint) {
+            headers["Origin"] = "https://music.youtube.com"
+            headers["Referer"] = "https://music.youtube.com/"
+        } else {
+            headers["Origin"] = "https://www.youtube.com"
+            headers["Referer"] = "https://www.youtube.com/"
+        }
+        return headers
+    }
+
+    private fun String.withStreamingPoToken(streamingPoToken: String?): String {
+        if (streamingPoToken.isNullOrBlank()) return this
+        return runCatching {
+            val uri = Uri.parse(this)
+            if (uri.getQueryParameter("pot") != null) this
+            else toHttpUrl().newBuilder().addQueryParameter("pot", streamingPoToken).build().toString()
+        }.getOrDefault(this)
+    }
+
+    private fun fetchVisitorData(videoId: String, cookie: String?): String? {
+        val cacheKey = fingerprint(normalizeCookie(cookie))
+        synchronized(visitorDataCache) {
+            visitorDataCache[cacheKey]?.let { cached ->
+                if (cached.expiresAtElapsedRealtime > monotonicNowMillis()) return cached.value
+                visitorDataCache.remove(cacheKey)
+            }
+        }
+
+        // Fast InnerTubeX strategy: sw.js_data
+        val fastResult = VisitorDataFetcher.fetchVisitorData(httpClient, PUBLIC_WEB_USER_AGENT)
+        if (!fastResult.isNullOrBlank()) {
+            cacheVisitorData(cookie, fastResult)
+            return fastResult
+        }
+
+        // Fallback: fast player call with visionOS
+        return runCatching {
+            PlayerRequest.execute(
+                httpClient = httpClient,
+                client = ClientCatalog.anonymousClients.first(),
+                videoId = videoId,
+                playlistId = null,
+                cookie = null,
+                visitorData = null,
+                poToken = null,
+            ).visitorData
+        }.getOrNull()?.also { cacheVisitorData(cookie, it) }
+    }
+
+    private fun cacheVisitorData(cookie: String?, visitorData: String) {
+        val value = visitorData.trim().takeIf { it.isNotEmpty() } ?: return
+        synchronized(visitorDataCache) {
+            visitorDataCache[fingerprint(normalizeCookie(cookie))] = CachedVisitorData(
+                value,
+                monotonicNowMillis() + VISITOR_DATA_CACHE_TTL_MS,
+            )
+        }
+    }
+
+    private fun resolveTvSignatureTimestamp(): Long? {
+        val now = monotonicNowMillis()
+        if (tvSignatureTimestamp != null && tvSignatureTimestampExpiresAt > now) {
+            return tvSignatureTimestamp
+        }
+        return runCatching {
+            val request = Request.Builder()
+                .url("https://www.youtube.com/tv")
+                .header("User-Agent", "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold")
+                .build()
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val body = response.body?.string().orEmpty()
+                val match = Regex("""signatureTimestamp":(\d+)""").find(body)
+                match?.groupValues?.getOrNull(1)?.toLongOrNull()?.also { sts ->
+                    tvSignatureTimestamp = sts
+                    tvSignatureTimestampExpiresAt = now + TV_CONFIG_CACHE_TTL_MS
+                }
+            }
+        }.getOrNull()
+    }
+
+    private fun getCachedPlayback(key: PlaybackCacheKey): PlaybackData? {
+        val now = monotonicNowMillis()
+        synchronized(playbackCache) {
+            val cached = playbackCache[key] ?: return null
+            if (cached.expiresAtElapsedRealtime > now + CACHE_EXPIRY_MARGIN_MS) {
+                return cached.data
+            }
+            playbackCache.remove(key)
+            return null
+        }
+    }
+
+    private fun cachePlayback(key: PlaybackCacheKey, data: PlaybackData) {
+        synchronized(playbackCache) {
+            playbackCache[key] = CachedPlayback(
+                data = data,
+                expiresAtElapsedRealtime = monotonicNowMillis() + (data.streamExpiresInSeconds * 1000L),
+            )
+        }
+    }
+
+    private fun failedClientsFor(key: PlaybackCacheKey): Set<String> {
+        val healthKey = ClientHealthKey(
+            videoId = key.videoId,
+            cookieFingerprint = key.cookieFingerprint,
+            visitorDataFingerprint = key.visitorDataFingerprint,
+            authenticatedOnly = key.authenticatedOnly,
+        )
+        val now = monotonicNowMillis()
+        synchronized(failedClients) {
+            val failed = failedClients[healthKey] ?: return emptySet()
+            if (failed.expiresAtElapsedRealtime > now) return setOf(failed.clientName)
+            failedClients.remove(healthKey)
+            return emptySet()
+        }
+    }
+
+    private fun clearSuccessfulClient(key: PlaybackCacheKey, clientName: String) {
+        val healthKey = ClientHealthKey(
+            videoId = key.videoId,
+            cookieFingerprint = key.cookieFingerprint,
+            visitorDataFingerprint = key.visitorDataFingerprint,
+            authenticatedOnly = key.authenticatedOnly,
+        )
+        synchronized(failedClients) {
+            failedClients.remove(healthKey)
+        }
+    }
+
+    private fun normalizeCookie(cookie: String?): String? = cookie
+        ?.split(';')
+        ?.asSequence()
+        ?.mapNotNull { pair ->
+            val trimmed = pair.trim()
+            val separator = trimmed.indexOf('=')
+            if (separator <= 0) null else trimmed
+        }
+        ?.joinToString("; ")
+        ?.takeIf { it.isNotEmpty() }
+
+    private fun fingerprint(value: String?): String =
+        value?.takeIf { it.isNotBlank() }?.let { sha256(it) } ?: "none"
+
+    private fun sha256(value: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+
+    private fun monotonicNowMillis(): Long = System.nanoTime() / 1_000_000L
+    private fun elapsedMillis(startNanos: Long): Long = (System.nanoTime() - startNanos) / 1_000_000L
+}

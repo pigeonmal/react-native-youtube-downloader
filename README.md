@@ -1,163 +1,108 @@
----
+# @pigeonmal/react-native-youtube-downloader
 
-# 🎥 @pigeonmal/react-native-youtube-downloader
+A focused React Native Nitro Module for extracting direct YouTube audio/video
+URLs. The Android implementation is project-owned: it uses the YouTube player
+endpoint, a small client catalog, local format selection, optional PoToken
+generation, and the caller's explicit HTTP range transport.
 
-A **React Native TurboModule** for extracting YouTube stream information (audio & video) directly from video IDs.
-Provides detailed playback metadata including formats, loudness data, and stream URLs.
+It does not depend on InnerTubeX, NewPipe, SABR, a prebuilt extraction AAR, or
+another extractor runtime.
 
-YouTube extraction is provided by the maintained
-[PipePipeExtractor](https://github.com/InfinityLoop1308/PipePipeExtractor) project.
+## What it does
 
----
+- Uses direct playback profiles including `ANDROID_VR`, `VISIONOS`, and
+  authenticated web/TV fallbacks.
+- Keeps the actual returned client name.
+- Selects `AUTO`, `LOW`, and `HIGH` audio formats locally, preferring Opus/WebM
+  for `AUTO` and lower-bandwidth AAC/MP4 for `LOW`.
+- Selects the best video format at or below the requested height.
+- Preserves the media request headers needed by the returned URL.
+- Keeps a small expiry-aware playback cache and temporarily avoids a client
+  after its URL fails.
+- Uses `Range: bytes=start-end` for seeking and downloads. It never adds a
+  `range` query parameter.
+- Retains only the small BotGuard WebView implementation needed for optional
+  PoToken generation.
 
-## 🚀 Features
-
-* Extract YouTube video and audio stream URLs.
-* Supports configurable **audio** and **video** quality.
-* Returns rich metadata (bitrate, MIME type, quality label, etc.).
-* Uses InnerTubeX-style audio format scoring for AUTO quality and bounded range
-  metadata for playback on every YouTube client.
-* Built on **React Native TurboModule** for high performance.
-* Fully typed with **TypeScript**.
-
----
-
-## 📦 Installation
+## Installation
 
 ```bash
-# Using npm
 npm install @pigeonmal/react-native-youtube-downloader
-
-# Or with yarn
+# or
 yarn add @pigeonmal/react-native-youtube-downloader
 ```
 
-> For React Native 0.71+ this module should link automatically.
-> If not, follow standard TurboModule setup in your native code.
-
----
-
-## 🔧 Usage
+## Usage
 
 ```ts
-import YoutubeDownloader, { VideoQuality } from '@pigeonmal/react-native-youtube-downloader';
-import type { ExtractStreamProps, PlaybackData } from '@pigeonmal/react-native-youtube-downloader';
+import YoutubeDownloader, {
+  VideoQuality,
+} from '@pigeonmal/react-native-youtube-downloader';
 
-const options: ExtractStreamProps = {
-  videoId: 'dQw4w9WgXcQ', // YouTube video ID
-  audioQuality: 'HIGH',
+const playback = await YoutubeDownloader.extractYoutubeStream({
+  videoId: 'dQw4w9WgXcQ',
+  audioQuality: 'AUTO',
   videoQuality: VideoQuality.QUALITY_1080P,
-};
-
-async function getStreamData() {
-  try {
-    const streamData: PlaybackData = await YoutubeDownloader.extractYoutubeStream(options);
-    console.log('Stream Data:', streamData);
-  } catch (error) {
-    console.error('Failed to extract stream:', error);
-  }
-}
+});
 ```
 
----
+Supported options include `playlistId`, `cookie`, `forceVisitorData`, and
+`authenticatedOnly`.
 
-## 🧠 API Reference
+## Range contract
 
-### `extractYoutubeStream(options: ExtractStreamProps): Promise<PlaybackData>`
+The downloader returns a direct media URL and request headers. The player or
+download transport must send bounded requests such as:
 
-Extracts the playback data for a YouTube video.
-
-#### Parameters
-
-| Name               | Type                        | Required | Description                                |
-| ------------------ | --------------------------- | -------- | ------------------------------------------ |
-| `videoId`          | `string`                    | ✅        | The YouTube video ID                       |
-| `audioQuality`     | `'AUTO' \| 'LOW' \| 'HIGH'` | ✅        | Audio quality preference                   |
-| `playlistId`       | `string`                    | ❌        | Optional playlist ID for context           |
-| `videoQuality`     | `number`                    | ❌        | Desired video resolution (e.g., 720, 1080) |
-| `cookie`           | `string`                    | ❌        | Optional authentication cookie             |
-| `forceVisitorData` | `string`                    | ❌        | Optional YouTube visitor data override     |
-| `authenticatedOnly` | `boolean`                  | ❌        | Require the authenticated request path and never try anonymous clients |
-
-#### Returns
-
-A `Promise` resolving to a **PlaybackData** object containing:
-
-* `audioStream`: `StreamPlayback` — audio stream info and URL.
-* `videoStream`: `StreamPlayback` — video stream info and URL (if applicable).
-* `videoDetails`: `VideoDetails` — metadata like title, author, and duration.
-* `audioConfig`: `AudioConfig` — loudness and perceptual loudness levels.
-* `streamExpiresInSeconds`: number of seconds until stream expiration.
-
----
-
-## 📄 Type Definitions
-
-### `PlaybackData`
-
-```ts
-interface PlaybackData {
-  audioConfig?: AudioConfig;
-  videoDetails?: VideoDetails;
-  playbackTracking?: PlaybackTracking;
-  streamExpiresInSeconds: number;
-  audioStream: StreamPlayback;
-  videoStream?: StreamPlayback;
-  clientName: string;
-}
+```http
+Range: bytes=1000000-1999999
 ```
 
-### `AudioQuality`
+Every remote read should validate `206`, `Content-Range`, and the returned
+length. Pure Music implements this contract in its custom Media3 data source.
 
-```ts
-type AudioQuality = 'AUTO' | 'LOW' | 'HIGH';
-```
+## Client behavior
 
-AUTO = on unmetered networks, prefer WebM/Opus using the format score; on
-metered networks, use the lower-bandwidth MP4/AAC profile.
+The extractor tries direct anonymous profiles first for public media. If an
+authenticated request is explicitly required, it uses the authenticated
+profiles and supplied cookies. `TVHTML5_SIMPLY` is retained as a tokenized
+fallback; it is not falsely reported as working when YouTube returns an
+unplayable response.
 
-### `VideoQuality` (enum)
+The implementation is intentionally direct-stream-first. SABR is not included
+because this package no longer carries an external SABR runtime; adding SABR
+later would require a project-owned Media3 SABR data source and tests.
 
-```ts
-enum VideoQuality {
-  AUTO = -1,
-  QUALITY_144P = 144,
-  QUALITY_240P = 240,
-  QUALITY_360P = 360,
-  QUALITY_480P = 480,
-  QUALITY_720P = 720,
-  QUALITY_1080P = 1080,
-  QUALITY_1440P = 1440,
-  QUALITY_2160P = 2160,
-}
-```
-AUTO = if wifi ? 1080p else 720p
----
+## Source layout
 
-## ✅ Testing
+The YouTube-facing code is organized under `com.youtubedownloader`:
+- `client/`: Dedicated client configurations (`VisionOsClient`, `AndroidVrClient`, `TvSimplyClient`, `WebClient`, etc.)
+- `potoken/`: BotGuard and PoToken generator, fast visitorData fetcher
+- `extractor/`: Request builder, response parser, and candidate selector
+- `cipher/`: Decryption cipher fallback
+- `models/`: Type definitions and data classes
 
-Run the Android unit tests and example debug build from `example/android`:
+The Nitro adapter and generated native boundary live separately under
+`com.margelo.nitro.youtubedownloader`, so future extractor updates can be
+reviewed without changing the module API. See
+[INNERTUBEX_VENDOR.md](INNERTUBEX_VENDOR.md) for the pinned reference and
+update workflow.
+
+## Development
 
 ```bash
-./gradlew :pigeonmal_react-native-youtube-downloader:testDebugUnitTest :app:assembleDebug
+JAVA_HOME=/path/to/jdk-21 ./gradlew \
+  :pigeonmal_react-native-youtube-downloader:testDebugUnitTest
 ```
 
-The live YouTube smoke test is opt-in because it requires network access:
+Network smoke tests are opt-in:
 
 ```bash
-YOUTUBE_LIVE_TEST=1 ./gradlew :pigeonmal_react-native-youtube-downloader:testDebugUnitTest \
-  --tests com.youtubedownloader.extractors.PipePipeExtractorLiveTest
+YOUTUBE_LIVE_TEST=1 ./gradlew \
+  :pigeonmal_react-native-youtube-downloader:testDebugUnitTest \
+  --tests com.youtubedownloader.innertubex.YoutubeExtractorLiveTest
 ```
 
-## 🧑‍💻 Contributing
+## License
 
-Pull requests are welcome!
-If you encounter issues or want to suggest improvements, please open an issue.
-
----
-
-## 🪪 License
-
-This project is open source and available under the MIT License
-
----
+MIT. The project contains no bundled InnerTubeX or other extractor runtime.
