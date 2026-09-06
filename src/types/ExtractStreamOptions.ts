@@ -16,4 +16,6 @@ export interface ExtractStreamOptions {
   forceVisitorData?: string;
   /** When true, anonymous clients are not attempted. */
   authenticatedOnly?: boolean;
+  /** Optional specific client name to target (e.g. 'IOS', 'ANDROID_VR', 'WEB', 'MWEB', 'TVHTML5_SIMPLY'). */
+  clientName?: string;
 }

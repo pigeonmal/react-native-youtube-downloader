@@ -10,4 +10,5 @@ data class PlaybackData(
     val clientName: String,
     val extractionDurationMs: Double? = null,
     val poTokenDurationMs: Double? = null,
+    val sabrStreamingUrl: String? = null,
 )

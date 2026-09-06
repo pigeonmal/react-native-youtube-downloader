@@ -17,6 +17,7 @@ internal fun ExtractorPlaybackData.toNitroPlaybackData(): PlaybackData = Playbac
   clientName = clientName,
   extractionDurationMs = extractionDurationMs,
   poTokenDurationMs = poTokenDurationMs,
+  sabrStreamingUrl = sabrStreamingUrl,
 )
 
 private fun ExtractorStreamPlayback.toNitroStreamPlayback(): StreamPlayback = StreamPlayback(

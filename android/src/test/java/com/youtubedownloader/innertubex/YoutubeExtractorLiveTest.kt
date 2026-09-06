@@ -67,6 +67,70 @@ class YoutubeExtractorLiveTest {
         assertStreamIsReachable(playback.audioStream)
     }
 
+    @Test
+    fun testEveryClientExtractionAndStreamUrl() {
+        assumeTrue("Set YOUTUBE_LIVE_TEST=1 to run the network smoke test", System.getenv("YOUTUBE_LIVE_TEST") == "1")
+
+        val clientsToTest = listOf(
+            com.youtubedownloader.innertubex.client.VisionOsClient.VISIONOS,
+            com.youtubedownloader.innertubex.client.VisionOsClient.VISIONOS_0_1,
+            com.youtubedownloader.innertubex.client.AndroidVrClient.ANDROID_VR_1_65_10,
+            com.youtubedownloader.innertubex.client.AndroidVrClient.ANDROID_VR_1_61_48,
+            com.youtubedownloader.innertubex.client.IosClient.IOS,
+            com.youtubedownloader.innertubex.client.WebClient.WEB_EMBEDDED_PLAYER,
+            com.youtubedownloader.innertubex.client.MWebClient.MWEB,
+            com.youtubedownloader.innertubex.client.WebClient.WEB,
+            com.youtubedownloader.innertubex.client.TvSimplyClient.TVHTML5_SIMPLY,
+        )
+
+        val results = mutableMapOf<String, String>()
+
+        for (client in clientsToTest) {
+            val start = System.currentTimeMillis()
+            try {
+                val playback = YoutubeExtractor.extractWithClient(
+                    clientName = client.clientName,
+                    videoId = "dQw4w9WgXcQ",
+                )
+                assertTrue("Stream URL for ${client.clientName} must not be blank", playback.audioStream.streamUrl.isNotBlank())
+                assertStreamIsReachable(playback.audioStream)
+                val duration = System.currentTimeMillis() - start
+                results[client.clientName] = "SUCCESS (${duration}ms, isHls=${playback.audioStream.isHls}, itag=${playback.audioStream.format.itag})"
+                println("[CLIENT TEST] ${client.clientName}: SUCCESS (${duration}ms)")
+            } catch (e: Throwable) {
+                val duration = System.currentTimeMillis() - start
+                results[client.clientName] = "FAILED (${duration}ms): ${e.message}"
+                println("[CLIENT TEST] ${client.clientName}: FAILED - ${e.message}")
+            }
+        }
+
+        // At least the top anonymous clients must succeed
+        assertTrue("VISIONOS must succeed", results["VISIONOS"]?.startsWith("SUCCESS") == true)
+        assertTrue("ANDROID_VR must succeed", results["ANDROID_VR"]?.startsWith("SUCCESS") == true)
+        assertTrue("IOS must succeed", results["IOS"]?.startsWith("SUCCESS") == true)
+    }
+
+    @Test
+    fun testSabrBootstrapAndExtraction() {
+        assumeTrue("Set YOUTUBE_LIVE_TEST=1 to run the network smoke test", System.getenv("YOUTUBE_LIVE_TEST") == "1")
+
+        // Parse a live player response and verify SABR bootstrap is extracted
+        val response = com.youtubedownloader.innertubex.extractor.PlayerRequest.execute(
+            httpClient = okhttp3.OkHttpClient(),
+            client = com.youtubedownloader.innertubex.client.AndroidVrClient.ANDROID_VR_1_65_10,
+            videoId = "dQw4w9WgXcQ",
+            playlistId = null,
+            cookie = null,
+            visitorData = null,
+            poToken = null,
+        )
+
+        val sabr = response.sabrBootstrap
+        assertTrue("SABR bootstrap must be present in player response", sabr != null)
+        assertTrue("serverAbrStreamingUrl must start with https://", sabr!!.serverAbrStreamingUrl.startsWith("https://"))
+        assertTrue("candidateItags must not be empty", sabr.candidateItags.isNotEmpty())
+    }
+
     private fun extractPublicVideo() = YoutubeExtractor.extract(
         videoId = "dQw4w9WgXcQ",
         playlistId = null,
@@ -102,10 +166,24 @@ class YoutubeExtractorLiveTest {
     }
 
     private fun assertStreamIsReachable(stream: StreamPlayback) {
-        assertRangeIsReachable(stream.streamUrl, "bytes=0-1023", stream.requestHeaders)
-        // Keep the second probe small enough for short audio formats while
-        // still proving that a non-zero seek starts at the requested offset.
-        assertRangeIsReachable(stream.streamUrl, "bytes=1024-2047", stream.requestHeaders)
+        if (stream.isHls) {
+            val connection = URL(stream.streamUrl).openConnection() as HttpURLConnection
+            try {
+                connection.requestMethod = "GET"
+                stream.requestHeaders.forEach { (name, value) -> connection.setRequestProperty(name, value) }
+                connection.connectTimeout = 30_000
+                connection.readTimeout = 30_000
+                val responseCode = connection.responseCode
+                assertEquals("HLS stream URL must return HTTP 200, got $responseCode", HttpURLConnection.HTTP_OK, responseCode)
+                val body = connection.inputStream.bufferedReader().readText()
+                assertTrue("HLS playlist must start with #EXTM3U", body.startsWith("#EXTM3U"))
+            } finally {
+                connection.disconnect()
+            }
+        } else {
+            assertRangeIsReachable(stream.streamUrl, "bytes=0-1023", stream.requestHeaders)
+            assertRangeIsReachable(stream.streamUrl, "bytes=1024-2047", stream.requestHeaders)
+        }
     }
 
     private fun assertRangeIsReachable(

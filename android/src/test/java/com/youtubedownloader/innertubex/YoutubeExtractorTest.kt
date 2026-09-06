@@ -116,8 +116,9 @@ class YoutubeExtractorTest {
 
     @Test
     fun peekCacheReturnsNullOnCacheMiss() {
+        YoutubeExtractor.clearCachedPlayback()
         val cached = YoutubeExtractor.peekCache(
-            videoId = "dQw4w9WgXcQ",
+            videoId = "unextracted0",
             playlistId = null,
             audioQuality = com.youtubedownloader.models.AudioQuality.AUTO,
             videoQuality = null,

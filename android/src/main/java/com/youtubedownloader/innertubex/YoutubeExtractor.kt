@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.youtubedownloader.innertubex.client.ClientCatalog
+import com.youtubedownloader.innertubex.client.VisionOsClient
 import com.youtubedownloader.innertubex.client.YouTubeClient
 import com.youtubedownloader.innertubex.extractor.PlayerRequest
 import com.youtubedownloader.innertubex.extractor.StreamCandidate
@@ -190,6 +191,7 @@ object YoutubeExtractor {
         forceVisitorData: String?,
         authenticatedOnly: Boolean = false,
         bypassCache: Boolean = false,
+        targetClientName: String? = null,
     ): PlaybackData = runBlocking(Dispatchers.IO) {
         extractAsync(
             videoId = videoId,
@@ -201,8 +203,29 @@ object YoutubeExtractor {
             forceVisitorData = forceVisitorData,
             authenticatedOnly = authenticatedOnly,
             bypassCache = bypassCache,
+            targetClientName = targetClientName,
         )
     }
+
+    fun extractWithClient(
+        clientName: String,
+        videoId: String,
+        playlistId: String? = null,
+        audioQuality: AudioQuality = AudioQuality.AUTO,
+        videoQuality: VideoQuality? = null,
+        cookie: String? = null,
+        forceVisitorData: String? = null,
+    ): PlaybackData = extract(
+        videoId = videoId,
+        playlistId = playlistId,
+        audioQuality = audioQuality,
+        videoQuality = videoQuality,
+        isMetered = false,
+        cookie = cookie,
+        forceVisitorData = forceVisitorData,
+        bypassCache = true,
+        targetClientName = clientName,
+    )
 
     suspend fun extractAsync(
         videoId: String,
@@ -214,6 +237,7 @@ object YoutubeExtractor {
         forceVisitorData: String?,
         authenticatedOnly: Boolean = false,
         bypassCache: Boolean = false,
+        targetClientName: String? = null,
     ): PlaybackData {
         val startedAtNanos = System.nanoTime()
         val normalizedVideoId = videoId.trim()
@@ -237,7 +261,7 @@ object YoutubeExtractor {
 
         // Fix for "Sometimes JS total duration is < than native duration":
         // On cache hit, return the actual elapsed time of this call (<1ms) instead of stale cold duration
-        if (!bypassCache) {
+        if (!bypassCache && targetClientName.isNullOrBlank()) {
             getCachedPlayback(cacheKey)?.let { cached ->
                 val elapsedMs = (System.nanoTime() - startedAtNanos) / 1_000_000.0
                 return cached.copy(extractionDurationMs = elapsedMs)
@@ -245,7 +269,25 @@ object YoutubeExtractor {
         }
 
         val excluded = failedClientsFor(cacheKey)
-        val clients = ClientCatalog.getClients(normalizedCookie, authenticatedOnly, excluded)
+        val clients = if (!targetClientName.isNullOrBlank()) {
+            val all = ClientCatalog.anonymousClients + ClientCatalog.authenticatedClients
+            val target = targetClientName.trim()
+            val found = if (target.equals("VISIONOS_0_1", ignoreCase = true)) {
+                listOf(VisionOsClient.VISIONOS_0_1)
+            } else if (target.equals("VISIONOS", ignoreCase = true)) {
+                listOf(VisionOsClient.VISIONOS)
+            } else {
+                all.filter {
+                    it.clientName.equals(target, ignoreCase = true) ||
+                    (it.friendlyName?.replace(" ", "_")?.replace(".", "_")?.equals(target, ignoreCase = true) == true) ||
+                    (it.friendlyName?.equals(target, ignoreCase = true) == true)
+                }
+            }
+            if (found.isEmpty()) throw IllegalArgumentException("Unknown YouTube client: $targetClientName")
+            found
+        } else {
+            ClientCatalog.getClients(normalizedCookie, authenticatedOnly, excluded)
+        }
         var lastError: Throwable? = null
 
         for (client in clients) {
@@ -301,8 +343,10 @@ object YoutubeExtractor {
                     streamingDataPoToken = poTokens?.streamingDataPoToken,
                 )
 
-                clearSuccessfulClient(cacheKey, client.clientName)
-                cachePlayback(cacheKey, playback)
+                if (targetClientName.isNullOrBlank()) {
+                    clearSuccessfulClient(cacheKey, client.clientName)
+                    cachePlayback(cacheKey, playback)
+                }
                 try { Log.d(TAG, "${client.clientName} succeeded in ${elapsedMillis(clientStart)}ms; total=${totalElapsedMs.toInt()}ms") } catch (_: Throwable) {}
                 return playback
             } catch (error: Throwable) {
@@ -424,6 +468,7 @@ object YoutubeExtractor {
             clientName = client.clientName,
             extractionDurationMs = totalElapsedMs,
             poTokenDurationMs = null,
+            sabrStreamingUrl = parsed.sabrBootstrap?.serverAbrStreamingUrl,
         )
     }
 

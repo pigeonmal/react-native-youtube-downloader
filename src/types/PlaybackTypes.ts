@@ -9,6 +9,8 @@ export interface PlaybackData {
   clientName: string;
   extractionDurationMs?: number;
   poTokenDurationMs?: number;
+  /** Server ABR streaming URL for SABR / UMP binary streaming if available */
+  sabrStreamingUrl?: string;
 }
 
 /** A selected stream and the headers/range contract required to read it. */

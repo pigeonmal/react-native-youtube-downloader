@@ -32,18 +32,21 @@ class HybridYoutubeDownloader : HybridYoutubeDownloaderSpec() {
     val authenticatedOnly = options.authenticatedOnly == true
 
     // Synchronous native cache peek: eliminates thread hopping and binder IPC on cache hits (<0.5ms)
-    val cached = YoutubeExtractor.peekCache(
-      videoId = options.videoId,
-      playlistId = options.playlistId,
-      audioQuality = audioQuality,
-      videoQuality = videoQuality,
-      isMetered = isMetered,
-      cookie = options.cookie,
-      forceVisitorData = options.forceVisitorData,
-      authenticatedOnly = authenticatedOnly,
-    )
-    if (cached != null) {
-      return Promise.resolved(cached.toNitroPlaybackData())
+    // Only peek cache when no specific client is forced.
+    if (options.clientName.isNullOrBlank()) {
+      val cached = YoutubeExtractor.peekCache(
+        videoId = options.videoId,
+        playlistId = options.playlistId,
+        audioQuality = audioQuality,
+        videoQuality = videoQuality,
+        isMetered = isMetered,
+        cookie = options.cookie,
+        forceVisitorData = options.forceVisitorData,
+        authenticatedOnly = authenticatedOnly,
+      )
+      if (cached != null) {
+        return Promise.resolved(cached.toNitroPlaybackData())
+      }
     }
 
     return Promise.async {
@@ -56,6 +59,7 @@ class HybridYoutubeDownloader : HybridYoutubeDownloaderSpec() {
         cookie = options.cookie,
         forceVisitorData = options.forceVisitorData,
         authenticatedOnly = authenticatedOnly,
+        targetClientName = options.clientName,
       )
       playback.toNitroPlaybackData()
     }
