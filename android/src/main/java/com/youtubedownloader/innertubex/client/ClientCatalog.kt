@@ -27,20 +27,16 @@ object ClientCatalog {
     )
 
     /**
-     * Authenticated clients used when a cookie is available or requested.
-     * Ordered: Web Remix (Music) -> TV HTML5 -> TV Downgraded -> Android -> iOS -> TV Simply -> Web.
+     * Authenticated clients verified to succeed when a cookie is available or requested.
+     * Ordered: Web Remix (Music Auth) -> TV Embedded -> TV Simply -> Android -> Mobile Web -> Desktop Web.
      */
     val authenticatedClients: List<YouTubeClient> = listOf(
         WebRemixClient.WEB_REMIX,
-        TvHtml5Client.TVHTML5,
-        TvDowngradedClient.TVHTML5_DOWNGRADED,
-        AndroidClient.ANDROID,
-        IosClient.IOS,
-        IosClient.IPADOS,
-        TvSimplyClient.TVHTML5_SIMPLY,
         TvSimplyClient.TVHTML5_EMBEDDED,
-        WebClient.WEB,
+        TvSimplyClient.TVHTML5_SIMPLY,
+        AndroidClient.ANDROID,
         MWebClient.MWEB,
+        WebClient.WEB,
     )
 
     fun getClients(cookie: String?, authenticatedOnly: Boolean, excludedClientNames: Set<String>): List<YouTubeClient> {
