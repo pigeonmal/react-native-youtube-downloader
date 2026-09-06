@@ -285,6 +285,7 @@ object YoutubeExtractor {
                 target.equals("IPADOS", ignoreCase = true) -> listOf(IosClient.IPADOS)
                 target.equals("IOS", ignoreCase = true) -> listOf(IosClient.IOS)
                 target.equals("TVHTML5_SIMPLY", ignoreCase = true) -> listOf(TvSimplyClient.TVHTML5_SIMPLY)
+                target.equals("TVHTML5_EMBEDDED", ignoreCase = true) -> listOf(TvSimplyClient.TVHTML5_EMBEDDED)
                 target.equals("TVHTML5", ignoreCase = true) -> listOf(TvHtml5Client.TVHTML5)
                 target.equals("TVHTML5_DOWNGRADED", ignoreCase = true) -> listOf(TvDowngradedClient.TVHTML5_DOWNGRADED)
                 target.equals("WEB_REMIX", ignoreCase = true) -> listOf(WebRemixClient.WEB_REMIX)
@@ -572,19 +573,38 @@ object YoutubeExtractor {
         }
         return runCatching {
             val request = Request.Builder()
-                .url("https://www.youtube.com/tv")
-                .header("User-Agent", "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold")
+                .url("https://www.youtube.com/iframe_api")
+                .header("User-Agent", "Mozilla/5.0")
                 .build()
             httpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@use null
-                val body = response.body?.string().orEmpty()
-                val match = Regex("""signatureTimestamp":(\d+)""").find(body)
-                match?.groupValues?.getOrNull(1)?.toLongOrNull()?.also { sts ->
-                    tvSignatureTimestamp = sts
-                    tvSignatureTimestampExpiresAt = now + TV_CONFIG_CACHE_TTL_MS
+                val body = response.body?.string().orEmpty().replace("\\/", "/")
+                val playerId = Regex("""/s/player/([a-zA-Z0-9_-]+)/""").find(body)?.groupValues?.getOrNull(1)
+                if (playerId != null) {
+                    val baseJsReq = Request.Builder()
+                        .url("https://www.youtube.com/s/player/$playerId/player_ias.vflset/en_US/base.js")
+                        .header("User-Agent", "Mozilla/5.0")
+                        .build()
+                    httpClient.newCall(baseJsReq).execute().use { jsResp ->
+                        if (jsResp.isSuccessful) {
+                            val jsBody = jsResp.body?.string().orEmpty()
+                            val sts = Regex("""signatureTimestamp:(\d+)""").find(jsBody)?.groupValues?.getOrNull(1)?.toLongOrNull()
+                            if (sts != null) {
+                                tvSignatureTimestamp = sts
+                                tvSignatureTimestampExpiresAt = now + TV_CONFIG_CACHE_TTL_MS
+                                return@runCatching sts
+                            }
+                        }
+                    }
                 }
+                null
             }
-        }.getOrNull()
+        }.getOrNull() ?: (tvSignatureTimestamp ?: 20697L).also {
+            if (tvSignatureTimestamp == null) {
+                tvSignatureTimestamp = it
+                tvSignatureTimestampExpiresAt = now + TV_CONFIG_CACHE_TTL_MS
+            }
+        }
     }
 
     private fun getCachedPlayback(key: PlaybackCacheKey): PlaybackData? {

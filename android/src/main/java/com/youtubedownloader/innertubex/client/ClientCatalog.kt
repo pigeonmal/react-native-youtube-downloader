@@ -21,6 +21,7 @@ object ClientCatalog {
         IosClient.IOS,
         IosClient.IPADOS,
         TvSimplyClient.TVHTML5_SIMPLY,
+        TvSimplyClient.TVHTML5_EMBEDDED,
         WebClient.WEB,
         MWebClient.MWEB,
     )
@@ -37,6 +38,7 @@ object ClientCatalog {
         IosClient.IOS,
         IosClient.IPADOS,
         TvSimplyClient.TVHTML5_SIMPLY,
+        TvSimplyClient.TVHTML5_EMBEDDED,
         WebClient.WEB,
         MWebClient.MWEB,
     )

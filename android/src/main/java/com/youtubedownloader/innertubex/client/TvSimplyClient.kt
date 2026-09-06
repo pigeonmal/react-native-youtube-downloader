@@ -1,7 +1,5 @@
 package com.youtubedownloader.innertubex.client
 
-import com.youtubedownloader.innertubex.models.PoTokenBinding
-
 object TvSimplyClient {
     private const val TV_USER_AGENT =
         "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold " +
@@ -12,13 +10,30 @@ object TvSimplyClient {
         clientVersion = "1.0",
         clientId = "75",
         userAgent = TV_USER_AGENT,
+        platform = "TV",
         friendlyName = "TV HTML5 Simply",
         loginSupported = false,
         useSignatureTimestamp = true,
-        useWebPoTokens = true,
-        requirePoToken = true,
-        poTokenBinding = PoTokenBinding.VISITOR_DATA,
-        useMusicPlayerEndpoint = true,
+        useWebPoTokens = false,
+        requirePoToken = false,
+        useMusicPlayerEndpoint = false,
+        includeUserAgentInContext = true,
+    )
+
+    val TVHTML5_EMBEDDED = YouTubeClient(
+        clientName = "TVHTML5_SIMPLY",
+        clientVersion = "1.0",
+        clientId = "75",
+        userAgent = TV_USER_AGENT,
+        platform = "TV",
+        friendlyName = "TV HTML5 Embedded",
+        loginSupported = false,
+        useSignatureTimestamp = true,
+        isEmbedded = true,
+        useWebPoTokens = false,
+        requirePoToken = false,
+        useMusicPlayerEndpoint = false,
         includeUserAgentInContext = true,
     )
 }
+

@@ -138,9 +138,16 @@ const CLIENTS_TO_TEST: {
   },
   {
     id: 'TVHTML5_SIMPLY',
-    label: 'TV Simply (Botguard)',
-    category: 'PoToken Required',
-    desc: 'Requires visitor-bound PoToken attestation',
+    label: 'TV Simply (Anon + SABR)',
+    category: 'Anonymous',
+    desc: 'TV client profile with SABR UMP bootstrap',
+    auth: false,
+  },
+  {
+    id: 'TVHTML5_EMBEDDED',
+    label: 'TV HTML5 Embedded',
+    category: 'Anonymous',
+    desc: 'TV Simply embedded iframe profile with SABR bootstrap',
     auth: false,
   },
   {

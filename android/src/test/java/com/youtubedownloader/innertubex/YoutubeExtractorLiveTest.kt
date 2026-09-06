@@ -81,6 +81,7 @@ class YoutubeExtractorLiveTest {
             "IOS" to com.youtubedownloader.innertubex.client.IosClient.IOS,
             "IPADOS" to com.youtubedownloader.innertubex.client.IosClient.IPADOS,
             "TVHTML5_SIMPLY" to com.youtubedownloader.innertubex.client.TvSimplyClient.TVHTML5_SIMPLY,
+            "TVHTML5_EMBEDDED" to com.youtubedownloader.innertubex.client.TvSimplyClient.TVHTML5_EMBEDDED,
             "MWEB" to com.youtubedownloader.innertubex.client.MWebClient.MWEB,
             "WEB" to com.youtubedownloader.innertubex.client.WebClient.WEB,
         )
