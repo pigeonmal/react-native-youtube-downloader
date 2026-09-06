@@ -19,6 +19,8 @@ export interface StreamPlayback {
   requestHeaders?: Record<string, string>;
   /** Preferred bounded-read size in bytes. */
   rangeChunkSizeBytes?: number;
+  /** Whether the stream is an HLS playlist rather than a progressive stream. */
+  isHls?: boolean;
 }
 
 /** Metadata describing one selected YouTube format. */

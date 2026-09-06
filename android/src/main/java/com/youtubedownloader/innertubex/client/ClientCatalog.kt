@@ -3,7 +3,13 @@ package com.youtubedownloader.innertubex.client
 object ClientCatalog {
     /**
      * Unauthenticated clients prioritised for speed and reliability.
-     * Ordered: visionOS -> Android VR -> TV Simply (PoToken) -> Mobile Web -> Web -> TV Downgraded.
+     * 1. visionOS (ultra-fast ~80ms, no PoToken needed)
+     * 2. Android VR (fast ~110ms, no PoToken needed)
+     * 3. TV Simply (PoToken)
+     * 4. Mobile Web (PoToken)
+     * 5. Desktop Web (PoToken)
+     * 6. iOS (HLS fallback)
+     * 7. TV Downgraded
      */
     val anonymousClients: List<YouTubeClient> = listOf(
         VisionOsClient.VISIONOS,
@@ -14,20 +20,22 @@ object ClientCatalog {
         WebClient.WEB_EMBEDDED_PLAYER,
         MWebClient.MWEB,
         WebClient.WEB,
+        IosClient.IOS,
         TvDowngradedClient.TVHTML5_DOWNGRADED,
     )
 
     /**
      * Authenticated clients used when a cookie is available or requested.
-     * Ordered: Web Remix (Music) -> TV HTML5 -> TV Simply -> Mobile Web -> Web -> TV Downgraded.
+     * Ordered: Web Remix (Music) -> TV HTML5 -> Mobile Web -> Web -> iOS -> TV Simply -> TV Downgraded.
      */
     val authenticatedClients: List<YouTubeClient> = listOf(
         WebRemixClient.WEB_REMIX,
         TvHtml5Client.TVHTML5,
-        TvSimplyClient.TVHTML5_SIMPLY,
         WebClient.WEB_EMBEDDED_PLAYER,
         MWebClient.MWEB,
         WebClient.WEB,
+        IosClient.IOS,
+        TvSimplyClient.TVHTML5_SIMPLY,
         TvDowngradedClient.TVHTML5_DOWNGRADED,
     )
 

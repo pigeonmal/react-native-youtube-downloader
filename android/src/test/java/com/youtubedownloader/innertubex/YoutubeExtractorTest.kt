@@ -98,6 +98,7 @@ class YoutubeExtractorTest {
             com.youtubedownloader.innertubex.client.MWebClient.MWEB,
             com.youtubedownloader.innertubex.client.WebRemixClient.WEB_REMIX,
             com.youtubedownloader.innertubex.client.TvHtml5Client.TVHTML5,
+            com.youtubedownloader.innertubex.client.IosClient.IOS,
         )
 
         for (client in allClients) {
@@ -111,5 +112,20 @@ class YoutubeExtractorTest {
             val endpoint = client.playerEndpoint()
             assertTrue("Client ${client.friendlyName} endpoint must be valid", endpoint.startsWith("https://"))
         }
+    }
+
+    @Test
+    fun peekCacheReturnsNullOnCacheMiss() {
+        val cached = YoutubeExtractor.peekCache(
+            videoId = "dQw4w9WgXcQ",
+            playlistId = null,
+            audioQuality = com.youtubedownloader.models.AudioQuality.AUTO,
+            videoQuality = null,
+            isMetered = false,
+            cookie = null,
+            forceVisitorData = null,
+            authenticatedOnly = false,
+        )
+        assertEquals(null, cached)
     }
 }

@@ -5,4 +5,5 @@ data class StreamPlayback(
     val streamUrl: String,
     val requestHeaders: Map<String, String> = emptyMap(),
     val rangeChunkSizeBytes: Long = 0L,
+    val isHls: Boolean = false,
 )

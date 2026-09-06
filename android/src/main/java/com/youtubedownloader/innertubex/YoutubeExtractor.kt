@@ -151,6 +151,35 @@ object YoutubeExtractor {
         }
     }
 
+    fun peekCache(
+        videoId: String,
+        playlistId: String?,
+        audioQuality: AudioQuality,
+        videoQuality: VideoQuality?,
+        isMetered: Boolean,
+        cookie: String?,
+        forceVisitorData: String?,
+        authenticatedOnly: Boolean = false,
+    ): PlaybackData? {
+        val normalizedVideoId = videoId.trim()
+        if (!VIDEO_ID_PATTERN.matches(normalizedVideoId)) return null
+        val normalizedCookie = normalizeCookie(cookie)
+        val normalizedVisitorData = forceVisitorData?.trim().takeUnless { it.isNullOrEmpty() }
+
+        val cacheKey = PlaybackCacheKey(
+            videoId = normalizedVideoId,
+            playlistId = playlistId,
+            audioQuality = audioQuality,
+            videoQuality = videoQuality,
+            isMetered = isMetered,
+            cookieFingerprint = fingerprint(normalizedCookie),
+            visitorDataFingerprint = fingerprint(normalizedVisitorData),
+            authenticatedOnly = authenticatedOnly,
+        )
+
+        return getCachedPlayback(cacheKey)?.copy(extractionDurationMs = 0.0)
+    }
+
     fun extract(
         videoId: String,
         playlistId: String?,
@@ -224,15 +253,20 @@ object YoutubeExtractor {
             try {
                 val requestVisitorData = normalizedVisitorData ?: fetchVisitorData(normalizedVideoId, normalizedCookie)
 
-                val poTokens = if (client.requirePoToken) {
+                val poTokens = if (client.requirePoToken || client.useWebPoTokens) {
                     val visitor = requestVisitorData ?: fetchVisitorData(normalizedVideoId, normalizedCookie)
-                        ?: throw IllegalStateException("YouTube ${client.clientName} requires visitorData for PoToken")
-                    poTokenGenerator?.getWebClientPoToken(
-                        normalizedVideoId,
-                        visitor,
-                        normalizedCookie,
-                    ) ?: throw IllegalStateException("YouTube ${client.clientName} PoToken unavailable")
+                    if (visitor != null) {
+                        poTokenGenerator?.getWebClientPoToken(
+                            normalizedVideoId,
+                            visitor,
+                            normalizedCookie,
+                        )
+                    } else null
                 } else null
+
+                if (client.requirePoToken && poTokens == null) {
+                    throw IllegalStateException("YouTube ${client.clientName} requires visitorData/PoToken")
+                }
 
                 val sigTimestamp = if (client.useSignatureTimestamp) resolveTvSignatureTimestamp() else null
 
@@ -368,6 +402,7 @@ object YoutubeExtractor {
             streamUrl = audio.url.withStreamingPoToken(streamingDataPoToken),
             requestHeaders = audioHeaders,
             rangeChunkSizeBytes = RANGE_CHUNK_SIZE_BYTES,
+            isHls = audio.isHls,
         )
         val videoStream = video?.let { v ->
             StreamPlayback(
@@ -375,6 +410,7 @@ object YoutubeExtractor {
                 streamUrl = v.url.withStreamingPoToken(streamingDataPoToken),
                 requestHeaders = buildStreamHeaders(client),
                 rangeChunkSizeBytes = RANGE_CHUNK_SIZE_BYTES,
+                isHls = v.isHls,
             )
         }
 

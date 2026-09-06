@@ -19,20 +19,43 @@ class HybridYoutubeDownloader : HybridYoutubeDownloaderSpec() {
     get() = NitroModules.applicationContext
       ?: throw IllegalStateException("No React ApplicationContext is available")
 
+  private val connectivityManager: ConnectivityManager? by lazy {
+    NitroModules.applicationContext?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+  }
+
   override fun extractYoutubeStream(options: ExtractStreamOptions): Promise<PlaybackData> {
+    ensureExtractorConfigured()
+
+    val audioQuality = options.audioQuality.toExtractorAudioQuality()
+    val videoQuality = options.videoQuality.toExtractorVideoQuality()
+    val isMetered = connectivityManager?.isActiveNetworkMetered == true
+    val authenticatedOnly = options.authenticatedOnly == true
+
+    // Synchronous native cache peek: eliminates thread hopping and binder IPC on cache hits (<0.5ms)
+    val cached = YoutubeExtractor.peekCache(
+      videoId = options.videoId,
+      playlistId = options.playlistId,
+      audioQuality = audioQuality,
+      videoQuality = videoQuality,
+      isMetered = isMetered,
+      cookie = options.cookie,
+      forceVisitorData = options.forceVisitorData,
+      authenticatedOnly = authenticatedOnly,
+    )
+    if (cached != null) {
+      return Promise.resolved(cached.toNitroPlaybackData())
+    }
+
     return Promise.async {
-      ensureExtractorConfigured()
-      val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE)
-        as? ConnectivityManager
       val playback = YoutubeExtractor.extractAsync(
         videoId = options.videoId,
         playlistId = options.playlistId,
-        audioQuality = options.audioQuality.toExtractorAudioQuality(),
-        videoQuality = options.videoQuality.toExtractorVideoQuality(),
-        isMetered = connectivityManager?.isActiveNetworkMetered == true,
+        audioQuality = audioQuality,
+        videoQuality = videoQuality,
+        isMetered = isMetered,
         cookie = options.cookie,
         forceVisitorData = options.forceVisitorData,
-        authenticatedOnly = options.authenticatedOnly == true,
+        authenticatedOnly = authenticatedOnly,
       )
       playback.toNitroPlaybackData()
     }
