@@ -14,6 +14,7 @@ object MWebClient {
         loginSupported = true,
         useSignatureTimestamp = true,
         useWebPoTokens = true,
+        recommendPoToken = true,
         includeUserAgentInContext = true,
     )
 }

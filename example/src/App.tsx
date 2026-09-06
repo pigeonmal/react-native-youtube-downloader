@@ -201,9 +201,9 @@ const testStreamReachability = async (
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
     const headers: Record<string, string> = {
-      ...(requestHeaders || {}),
       'User-Agent':
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      ...(requestHeaders || {}),
     };
     if (!isHls) {
       headers.Range = 'bytes=0-1024';

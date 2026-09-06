@@ -1,9 +1,11 @@
 package com.youtubedownloader.innertubex.client
 
 object TvSimplyClient {
+    // Real Google Chromecast with Google TV Cobalt User Agent
     private const val TV_USER_AGENT =
-        "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold " +
-            "(unlike Gecko), Unknown_TV_Unknown_0/Unknown (Unknown, Unknown)"
+        "Mozilla/5.0 (Linux armv7l; Android 12) Cobalt/25.lts.30.1034943-gold " +
+            "(unlike Gecko) v8/8.8.278.8-bstar gles Starboard/15, " +
+            "sabrina_TV_cord_release/STTE.231215.005 (Google, Chromecast HD, Wireless)"
 
     val TVHTML5_SIMPLY = YouTubeClient(
         clientName = "TVHTML5_SIMPLY",
@@ -11,11 +13,17 @@ object TvSimplyClient {
         clientId = "75",
         userAgent = TV_USER_AGENT,
         platform = "TV",
+        deviceMake = "Google",
+        deviceModel = "Chromecast HD",
+        osName = "Android",
+        osVersion = "12",
         friendlyName = "TV HTML5 Simply",
         loginSupported = false,
         useSignatureTimestamp = true,
-        useWebPoTokens = false,
+        useWebPoTokens = true,
         requirePoToken = false,
+        recommendPoToken = true,
+        poTokenBinding = com.youtubedownloader.innertubex.models.PoTokenBinding.VISITOR_DATA,
         useMusicPlayerEndpoint = false,
         includeUserAgentInContext = true,
     )
@@ -26,12 +34,18 @@ object TvSimplyClient {
         clientId = "75",
         userAgent = TV_USER_AGENT,
         platform = "TV",
+        deviceMake = "Google",
+        deviceModel = "Chromecast HD",
+        osName = "Android",
+        osVersion = "12",
         friendlyName = "TV HTML5 Embedded",
         loginSupported = false,
         useSignatureTimestamp = true,
         isEmbedded = true,
-        useWebPoTokens = false,
+        useWebPoTokens = true,
         requirePoToken = false,
+        recommendPoToken = true,
+        poTokenBinding = com.youtubedownloader.innertubex.models.PoTokenBinding.VISITOR_DATA,
         useMusicPlayerEndpoint = false,
         includeUserAgentInContext = true,
     )

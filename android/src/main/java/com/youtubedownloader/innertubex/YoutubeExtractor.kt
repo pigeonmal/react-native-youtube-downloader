@@ -309,15 +309,21 @@ object YoutubeExtractor {
             try {
                 val requestVisitorData = normalizedVisitorData ?: fetchVisitorData(normalizedVideoId, normalizedCookie)
 
-                val poTokens = if (client.requirePoToken || client.useWebPoTokens) {
+                val needsWebPoTokens = (client.requirePoToken || client.recommendPoToken || client.useWebPoTokens) && client.useWebPoTokens
+                val poTokens = if (needsWebPoTokens) {
                     val visitor = requestVisitorData ?: fetchVisitorData(normalizedVideoId, normalizedCookie)
                     if (visitor != null) {
-                        poTokenGenerator?.getWebClientPoToken(
-                            normalizedVideoId,
-                            visitor,
-                            normalizedCookie,
-                            client.poTokenBinding,
-                        )
+                        try {
+                            poTokenGenerator?.getWebClientPoToken(
+                                normalizedVideoId,
+                                visitor,
+                                normalizedCookie,
+                                client.poTokenBinding,
+                            )
+                        } catch (e: Throwable) {
+                            if (client.requirePoToken) throw e
+                            null
+                        }
                     } else null
                 } else null
 

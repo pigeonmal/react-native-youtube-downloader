@@ -14,6 +14,8 @@ object WebRemixClient {
         loginSupported = true,
         useSignatureTimestamp = true,
         useWebPoTokens = true,
+        recommendPoToken = true,
+        poTokenBinding = com.youtubedownloader.innertubex.models.PoTokenBinding.VISITOR_DATA,
         useMusicPlayerEndpoint = false,
     )
 }

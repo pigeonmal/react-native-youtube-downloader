@@ -14,6 +14,7 @@ object WebClient {
         loginSupported = true,
         useSignatureTimestamp = true,
         useWebPoTokens = true,
+        recommendPoToken = true,
     )
 
     val WEB_EMBEDDED_PLAYER = YouTubeClient(
@@ -25,5 +26,7 @@ object WebClient {
         loginSupported = true,
         useSignatureTimestamp = true,
         isEmbedded = true,
+        useWebPoTokens = true,
+        recommendPoToken = true,
     )
 }

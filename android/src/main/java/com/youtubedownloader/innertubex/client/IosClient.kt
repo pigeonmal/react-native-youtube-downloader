@@ -17,6 +17,7 @@ object IosClient {
         friendlyName = "iOS",
         loginSupported = true,
         useSignatureTimestamp = false,
+        recommendPoToken = true,
         useMusicPlayerEndpoint = false,
     )
 
@@ -33,6 +34,7 @@ object IosClient {
         friendlyName = "iPadOS",
         loginSupported = true,
         useSignatureTimestamp = false,
+        recommendPoToken = true,
         useMusicPlayerEndpoint = false,
         includeUserAgentInContext = true,
     )

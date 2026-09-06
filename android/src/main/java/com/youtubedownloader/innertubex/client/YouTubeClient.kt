@@ -24,6 +24,7 @@ data class YouTubeClient(
     val isEmbedded: Boolean = false,
     val useWebPoTokens: Boolean = false,
     val requirePoToken: Boolean = false,
+    val recommendPoToken: Boolean = false,
     val poTokenBinding: PoTokenBinding = PoTokenBinding.VIDEO_ID,
     val includeUserAgentInContext: Boolean = false,
     val useMusicPlayerEndpoint: Boolean = false,

@@ -15,6 +15,7 @@ object AndroidClient {
         friendlyName = "Android 21.26.364",
         loginSupported = false,
         useSignatureTimestamp = false,
+        recommendPoToken = true,
         includeUserAgentInContext = true,
     )
 }
