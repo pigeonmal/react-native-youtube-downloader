@@ -2,6 +2,7 @@ package com.youtubedownloader.innertubex.potoken
 
 import android.content.Context
 import android.webkit.CookieManager
+import com.youtubedownloader.innertubex.models.PoTokenBinding
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -41,12 +42,13 @@ internal class PoTokenGenerator(context: Context) {
         videoId: String,
         visitorData: String,
         cookie: String? = null,
+        poTokenBinding: PoTokenBinding = PoTokenBinding.VIDEO_ID,
     ): WebPoTokenResult? {
         if (!webViewSupported || webViewBadImplementation.get() || visitorData.isBlank()) return null
         return try {
             mintLock.withLock {
                 withTimeout(POTOKEN_TIMEOUT_MS) {
-                    getWebClientPoTokenInternal(videoId, visitorData, cookie, forceRecreate = false)
+                    getWebClientPoTokenInternal(videoId, visitorData, cookie, forceRecreate = false, poTokenBinding = poTokenBinding)
                 }
             }
         } catch (_: TimeoutCancellationException) {
@@ -107,6 +109,7 @@ internal class PoTokenGenerator(context: Context) {
         visitorData: String,
         cookie: String?,
         forceRecreate: Boolean,
+        poTokenBinding: PoTokenBinding = PoTokenBinding.VIDEO_ID,
     ): WebPoTokenResult {
         val key = visitorData + "\u0000" + cookie.orEmpty()
         val (generator, streamingToken, recreated) = lock.withLock {
@@ -138,6 +141,15 @@ internal class PoTokenGenerator(context: Context) {
             )
         }
 
+        if (poTokenBinding == PoTokenBinding.VISITOR_DATA) {
+            // For VISITOR_DATA-bound clients (e.g. TVHTML5_SIMPLY), YouTube binds the player request
+            // to visitorData rather than videoId.
+            return WebPoTokenResult(
+                playerRequestPoToken = streamingToken,
+                streamingDataPoToken = streamingToken,
+            )
+        }
+
         val tokenKey = "$key\u0000$videoId"
         lock.withLock {
             playerTokenCache[tokenKey]?.takeIf { it.expiresAtElapsedRealtime > android.os.SystemClock.elapsedRealtime() }
@@ -151,7 +163,7 @@ internal class PoTokenGenerator(context: Context) {
             generator.generatePoToken(videoId)
         } catch (error: Throwable) {
             if (recreated) throw error
-            return getWebClientPoTokenInternal(videoId, visitorData, cookie, forceRecreate = true)
+            return getWebClientPoTokenInternal(videoId, visitorData, cookie, forceRecreate = true, poTokenBinding = poTokenBinding)
         }
         lock.withLock {
             if (sessionKey == key) {

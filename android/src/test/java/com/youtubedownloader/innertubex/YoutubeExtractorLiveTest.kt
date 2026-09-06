@@ -72,42 +72,49 @@ class YoutubeExtractorLiveTest {
         assumeTrue("Set YOUTUBE_LIVE_TEST=1 to run the network smoke test", System.getenv("YOUTUBE_LIVE_TEST") == "1")
 
         val clientsToTest = listOf(
-            com.youtubedownloader.innertubex.client.VisionOsClient.VISIONOS,
-            com.youtubedownloader.innertubex.client.VisionOsClient.VISIONOS_0_1,
-            com.youtubedownloader.innertubex.client.AndroidVrClient.ANDROID_VR_1_65_10,
-            com.youtubedownloader.innertubex.client.AndroidVrClient.ANDROID_VR_1_61_48,
-            com.youtubedownloader.innertubex.client.IosClient.IOS,
-            com.youtubedownloader.innertubex.client.WebClient.WEB_EMBEDDED_PLAYER,
-            com.youtubedownloader.innertubex.client.MWebClient.MWEB,
-            com.youtubedownloader.innertubex.client.WebClient.WEB,
-            com.youtubedownloader.innertubex.client.TvSimplyClient.TVHTML5_SIMPLY,
+            "VISIONOS" to com.youtubedownloader.innertubex.client.VisionOsClient.VISIONOS,
+            "VISIONOS_0_1" to com.youtubedownloader.innertubex.client.VisionOsClient.VISIONOS_0_1,
+            "ANDROID_VR_1_65_10" to com.youtubedownloader.innertubex.client.AndroidVrClient.ANDROID_VR_1_65_10,
+            "ANDROID_VR_1_61_48" to com.youtubedownloader.innertubex.client.AndroidVrClient.ANDROID_VR_1_61_48,
+            "ANDROID_VR_1_43_32" to com.youtubedownloader.innertubex.client.AndroidVrClient.ANDROID_VR_1_43_32,
+            "ANDROID" to com.youtubedownloader.innertubex.client.AndroidClient.ANDROID,
+            "IOS" to com.youtubedownloader.innertubex.client.IosClient.IOS,
+            "IPADOS" to com.youtubedownloader.innertubex.client.IosClient.IPADOS,
+            "TVHTML5_SIMPLY" to com.youtubedownloader.innertubex.client.TvSimplyClient.TVHTML5_SIMPLY,
+            "MWEB" to com.youtubedownloader.innertubex.client.MWebClient.MWEB,
+            "WEB" to com.youtubedownloader.innertubex.client.WebClient.WEB,
         )
 
         val results = mutableMapOf<String, String>()
 
-        for (client in clientsToTest) {
+        for ((id, client) in clientsToTest) {
             val start = System.currentTimeMillis()
             try {
                 val playback = YoutubeExtractor.extractWithClient(
-                    clientName = client.clientName,
+                    clientName = id,
                     videoId = "dQw4w9WgXcQ",
                 )
-                assertTrue("Stream URL for ${client.clientName} must not be blank", playback.audioStream.streamUrl.isNotBlank())
+                assertTrue("Stream URL for $id must not be blank", playback.audioStream.streamUrl.isNotBlank())
                 assertStreamIsReachable(playback.audioStream)
                 val duration = System.currentTimeMillis() - start
-                results[client.clientName] = "SUCCESS (${duration}ms, isHls=${playback.audioStream.isHls}, itag=${playback.audioStream.format.itag})"
-                println("[CLIENT TEST] ${client.clientName}: SUCCESS (${duration}ms)")
+                results[id] = "SUCCESS (${duration}ms, isHls=${playback.audioStream.isHls}, itag=${playback.audioStream.format.itag})"
+                println("[CLIENT TEST] $id: SUCCESS (${duration}ms)")
             } catch (e: Throwable) {
                 val duration = System.currentTimeMillis() - start
-                results[client.clientName] = "FAILED (${duration}ms): ${e.message}"
-                println("[CLIENT TEST] ${client.clientName}: FAILED - ${e.message}")
+                results[id] = "FAILED (${duration}ms): ${e.message}"
+                println("[CLIENT TEST] $id: FAILED - ${e.message}")
             }
         }
 
-        // At least the top anonymous clients must succeed
+        // Anonymous top-tier clients must succeed with reachable streams
         assertTrue("VISIONOS must succeed", results["VISIONOS"]?.startsWith("SUCCESS") == true)
-        assertTrue("ANDROID_VR must succeed", results["ANDROID_VR"]?.startsWith("SUCCESS") == true)
+        assertTrue("VISIONOS_0_1 must succeed", results["VISIONOS_0_1"]?.startsWith("SUCCESS") == true)
+        assertTrue("ANDROID_VR_1_65_10 must succeed", results["ANDROID_VR_1_65_10"]?.startsWith("SUCCESS") == true)
+        assertTrue("ANDROID_VR_1_61_48 must succeed", results["ANDROID_VR_1_61_48"]?.startsWith("SUCCESS") == true)
+        assertTrue("ANDROID_VR_1_43_32 must succeed", results["ANDROID_VR_1_43_32"]?.startsWith("SUCCESS") == true)
+        assertTrue("ANDROID must succeed", results["ANDROID"]?.startsWith("SUCCESS") == true)
         assertTrue("IOS must succeed", results["IOS"]?.startsWith("SUCCESS") == true)
+        assertTrue("IPADOS must succeed", results["IPADOS"]?.startsWith("SUCCESS") == true)
     }
 
     @Test

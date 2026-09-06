@@ -34,6 +34,7 @@ interface ClientVerificationItem {
   label: string;
   description: string;
   category: 'Anonymous' | 'Authenticated' | 'PoToken Required';
+  auth?: boolean;
   status: 'idle' | 'running' | 'success' | 'failed';
   extractionDurationMs?: number;
   nativeDurationMs?: number;
@@ -83,7 +84,7 @@ const CLIENTS_TO_TEST: {
     id: 'VISIONOS',
     label: 'visionOS (Primary Anon)',
     category: 'Anonymous',
-    desc: 'Ultra-fast (~80ms), direct progressive WebM/MP4 format',
+    desc: 'Ultra-fast (~80ms), direct progressive WebM/MP4 + SABR',
     auth: false,
   },
   {
@@ -94,10 +95,31 @@ const CLIENTS_TO_TEST: {
     auth: false,
   },
   {
-    id: 'ANDROID_VR',
-    label: 'Android VR (Anon + SABR)',
+    id: 'ANDROID_VR_1_65_10',
+    label: 'Android VR 1.65 (Anon + SABR)',
     category: 'Anonymous',
     desc: 'Fast (~100ms) progressive formats + SABR UMP bootstrap',
+    auth: false,
+  },
+  {
+    id: 'ANDROID_VR_1_61_48',
+    label: 'Android VR 1.61 (Anon Fallback)',
+    category: 'Anonymous',
+    desc: 'Older Android VR profile with alternative formats',
+    auth: false,
+  },
+  {
+    id: 'ANDROID_VR_1_43_32',
+    label: 'Android VR 1.43 (Direct AAC/Opus)',
+    category: 'Anonymous',
+    desc: 'Direct adaptive AAC (itag 140) and Opus without SABR',
+    auth: false,
+  },
+  {
+    id: 'ANDROID',
+    label: 'Android Native (21.26)',
+    category: 'Anonymous',
+    desc: 'Direct progressive MP4 (itag 18) + full SABR bootstrap',
     auth: false,
   },
   {
@@ -108,38 +130,52 @@ const CLIENTS_TO_TEST: {
     auth: false,
   },
   {
+    id: 'IPADOS',
+    label: 'iPadOS (Anon + HLS)',
+    category: 'Anonymous',
+    desc: 'iPadOS 17.7 profile with HLS playlist & SABR bootstrap',
+    auth: false,
+  },
+  {
     id: 'TVHTML5_SIMPLY',
     label: 'TV Simply (Botguard)',
     category: 'PoToken Required',
-    desc: 'Requires PoToken attestation',
+    desc: 'Requires visitor-bound PoToken attestation',
     auth: false,
   },
   {
     id: 'MWEB',
     label: 'Mobile Web (Botguard)',
     category: 'PoToken Required',
-    desc: 'Requires PoToken attestation',
+    desc: 'Requires PoToken attestation or cookies',
     auth: false,
   },
   {
     id: 'WEB',
     label: 'Desktop Web (Botguard)',
     category: 'PoToken Required',
-    desc: 'Requires PoToken attestation',
+    desc: 'Requires PoToken attestation or cookies',
     auth: false,
   },
   {
     id: 'WEB_REMIX',
     label: 'Web Remix (Music Auth)',
     category: 'Authenticated',
-    desc: 'Authenticated YouTube Music client + SABR streaming',
+    desc: 'YouTube Music client with cookie authentication',
     auth: true,
   },
   {
     id: 'TVHTML5',
-    label: 'TV HTML5 (Living Room)',
+    label: 'TV HTML5 (Living Room Auth)',
     category: 'Authenticated',
-    desc: 'Authenticated TV client fallback',
+    desc: 'TV client fallback with cookie authentication',
+    auth: true,
+  },
+  {
+    id: 'TVHTML5_DOWNGRADED',
+    label: 'TV Downgraded (yt-dlp Auth)',
+    category: 'Authenticated',
+    desc: 'yt-dlp default fallback with cookie authentication',
     auth: true,
   },
 ];
@@ -525,6 +561,7 @@ export default function App() {
           label: client.label,
           description: client.desc,
           category: client.category,
+          auth: client.auth,
           status: 'success',
           extractionDurationMs: elapsed,
           nativeDurationMs:
@@ -552,6 +589,7 @@ export default function App() {
           label: client.label,
           description: client.desc,
           category: client.category,
+          auth: client.auth,
           status: 'failed',
           extractionDurationMs: elapsed,
           error: errorMessage(err),
@@ -1208,7 +1246,9 @@ export default function App() {
                         <Text style={styles.errorText}>
                           {item.error?.includes('needs to be reloaded') ||
                           item.error?.includes('unavailable')
-                            ? 'Botguard / PoToken challenge required by YouTube'
+                            ? item.auth
+                              ? 'Cookie authentication required by YouTube'
+                              : 'Botguard / PoToken challenge required by YouTube'
                             : item.error || 'Extraction failed'}
                         </Text>
                       </View>

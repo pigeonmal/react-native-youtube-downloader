@@ -172,7 +172,10 @@ internal object PlayerResponseParser {
             .substringBefore('"', "")
             .takeIf { it.isNotBlank() }
 
-        val isAudio = mimeType.startsWith("audio/") || (isHls && !mimeType.startsWith("video/"))
+        val isAudio = mimeType.startsWith("audio/") ||
+            (isHls && !mimeType.startsWith("video/")) ||
+            format.has("audioQuality") ||
+            format.has("audioSampleRate")
         val isVideo = mimeType.startsWith("video/")
         val itag = format.optInt("itag")
         val bitrate = format.optInt("bitrate")

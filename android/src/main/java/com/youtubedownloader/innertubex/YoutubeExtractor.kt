@@ -3,9 +3,7 @@ package com.youtubedownloader.innertubex
 import android.content.Context
 import android.net.Uri
 import android.util.Log
-import com.youtubedownloader.innertubex.client.ClientCatalog
-import com.youtubedownloader.innertubex.client.VisionOsClient
-import com.youtubedownloader.innertubex.client.YouTubeClient
+import com.youtubedownloader.innertubex.client.*
 import com.youtubedownloader.innertubex.extractor.PlayerRequest
 import com.youtubedownloader.innertubex.extractor.StreamCandidate
 import com.youtubedownloader.innertubex.extractor.StreamSelector
@@ -272,12 +270,27 @@ object YoutubeExtractor {
         val clients = if (!targetClientName.isNullOrBlank()) {
             val all = ClientCatalog.anonymousClients + ClientCatalog.authenticatedClients
             val target = targetClientName.trim()
-            val found = if (target.equals("VISIONOS_0_1", ignoreCase = true)) {
-                listOf(VisionOsClient.VISIONOS_0_1)
-            } else if (target.equals("VISIONOS", ignoreCase = true)) {
-                listOf(VisionOsClient.VISIONOS)
-            } else {
-                all.filter {
+            val found = when {
+                target.equals("VISIONOS_0_1", ignoreCase = true) -> listOf(VisionOsClient.VISIONOS_0_1)
+                target.equals("VISIONOS", ignoreCase = true) -> listOf(VisionOsClient.VISIONOS)
+                target.equals("ANDROID_VR_1_65_10", ignoreCase = true) -> listOf(AndroidVrClient.ANDROID_VR_1_65_10)
+                target.equals("ANDROID_VR_1_61_48", ignoreCase = true) -> listOf(AndroidVrClient.ANDROID_VR_1_61_48)
+                target.equals("ANDROID_VR_1_43_32", ignoreCase = true) -> listOf(AndroidVrClient.ANDROID_VR_1_43_32)
+                target.equals("ANDROID_VR", ignoreCase = true) -> listOf(
+                    AndroidVrClient.ANDROID_VR_1_65_10,
+                    AndroidVrClient.ANDROID_VR_1_61_48,
+                    AndroidVrClient.ANDROID_VR_1_43_32,
+                )
+                target.equals("ANDROID", ignoreCase = true) -> listOf(AndroidClient.ANDROID)
+                target.equals("IPADOS", ignoreCase = true) -> listOf(IosClient.IPADOS)
+                target.equals("IOS", ignoreCase = true) -> listOf(IosClient.IOS)
+                target.equals("TVHTML5_SIMPLY", ignoreCase = true) -> listOf(TvSimplyClient.TVHTML5_SIMPLY)
+                target.equals("TVHTML5", ignoreCase = true) -> listOf(TvHtml5Client.TVHTML5)
+                target.equals("TVHTML5_DOWNGRADED", ignoreCase = true) -> listOf(TvDowngradedClient.TVHTML5_DOWNGRADED)
+                target.equals("WEB_REMIX", ignoreCase = true) -> listOf(WebRemixClient.WEB_REMIX)
+                target.equals("WEB", ignoreCase = true) -> listOf(WebClient.WEB)
+                target.equals("MWEB", ignoreCase = true) -> listOf(MWebClient.MWEB)
+                else -> all.filter {
                     it.clientName.equals(target, ignoreCase = true) ||
                     (it.friendlyName?.replace(" ", "_")?.replace(".", "_")?.equals(target, ignoreCase = true) == true) ||
                     (it.friendlyName?.equals(target, ignoreCase = true) == true)
@@ -302,11 +315,12 @@ object YoutubeExtractor {
                             normalizedVideoId,
                             visitor,
                             normalizedCookie,
+                            client.poTokenBinding,
                         )
                     } else null
                 } else null
 
-                if (client.requirePoToken && poTokens == null) {
+                if (client.requirePoToken && poTokens == null && poTokenGenerator != null) {
                     throw IllegalStateException("YouTube ${client.clientName} requires visitorData/PoToken")
                 }
 

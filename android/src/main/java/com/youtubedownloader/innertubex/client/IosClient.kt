@@ -19,4 +19,21 @@ object IosClient {
         useSignatureTimestamp = false,
         useMusicPlayerEndpoint = false,
     )
+
+    val IPADOS = YouTubeClient(
+        clientName = "IOS",
+        clientVersion = "21.26.4",
+        clientId = "5",
+        userAgent = "com.google.ios.youtube/21.26.4 (iPad7,6; U; CPU iPadOS 17_7_10 like Mac OS X; en-US)",
+        osName = "iPadOS",
+        osVersion = "17.7.10.21H450",
+        deviceMake = "Apple",
+        deviceModel = "iPad7,6",
+        platform = "TABLET",
+        friendlyName = "iPadOS",
+        loginSupported = true,
+        useSignatureTimestamp = false,
+        useMusicPlayerEndpoint = false,
+        includeUserAgentInContext = true,
+    )
 }
